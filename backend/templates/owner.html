@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VibeOrder Owner</title>
+<style>
+  :root { --bg:#f6f4f1; --panel:#fff; --ink:#1f1a17; --muted:#6f6359; --line:#e4dcd3; --accent:#c2410c; --ok:#2b8a3e; --bad:#c92a2a; --warn:#b35c00; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14110f; --panel:#1f1a17; --ink:#f5efe8; --muted:#b3a597; --line:#3a312b; --accent:#ff7a1a; --ok:#51cf66; --bad:#ff6b6b; --warn:#ffa94d; } }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display:flex; gap:12px; align-items:center; padding:10px 20px; background:var(--panel); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:3; flex-wrap:wrap; }
+  header h1 { font-size:17px; margin:0; }
+  nav { display:flex; gap:4px; }
+  nav button { border:none; background:none; border-bottom:2px solid transparent; border-radius:0; }
+  nav button.on { border-bottom-color:var(--accent); color:var(--accent); font-weight:700; }
+  .grow { flex:1; }
+  main { padding:20px; max-width:1200px; margin:0 auto; }
+  button { font:inherit; min-height:40px; padding:8px 14px; border-radius:10px; border:1px solid var(--line); background:var(--panel); color:var(--ink); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700; }
+  input, select { font:inherit; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--ink); min-height:40px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:16px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:10px; }
+  .card h2 { margin:0; font-size:17px; }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:4px 14px; }
+  .kv span:nth-child(odd) { color:var(--muted); }
+  .num { font-variant-numeric:tabular-nums; }
+  .big { font-size:26px; font-weight:800; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:13px; font-weight:700; border:1px solid currentColor; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
+  .muted { color:var(--muted); }
+  table { width:100%; border-collapse:collapse; background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+  td.n { text-align:right; font-variant-numeric:tabular-nums; }
+  .tablewrap { overflow:auto; }
+  .bar { display:flex; gap:10px; flex-wrap:wrap; align-items:end; margin-bottom:14px; }
+  .bar label { display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--muted); }
+  .login { max-width:380px; margin:80px auto; }
+  .err { color:var(--bad); font-weight:600; min-height:1.3em; }
+  .scope { font-size:13px; color:var(--muted); margin:8px 0; }
+</style>
+</head>
+<body>
+<header><h1>VibeOrder · Owner</h1>
+  <nav id="nav" hidden><button data-tab="overview" class="on">Branches</button><button data-tab="reports">Reports</button><button data-tab="menu">Menu</button></nav>
+  <span class="grow"></span><span id="who" class="muted"></span><button id="logout" hidden>Sign out</button></header>
+<main id="main"></main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const money = m => m == null || m === "" ? "–" : "Rs " + (Number(m) / 100).toLocaleString("en-PK");
+const ago = t => { if (!t) return "never"; const s = Math.round((Date.now() - new Date(t)) / 1000); return s < 90 ? s + "s ago" : s < 5400 ? Math.round(s / 60) + " min ago" : new Date(t).toLocaleString(); };
+let TOKEN = sessionStorage.getItem("ownerToken"), TAB = "overview", OV = null, timer = null;
+async function api(path, body, raw) {
+  const r = await fetch("/api/v1/owner/" + path, {method: body ? "POST" : "GET", headers: {"Authorization": "Owner " + TOKEN, "Content-Type": "application/json"}, body: body ? JSON.stringify(body) : undefined});
+  if (r.status === 401) { sessionStorage.removeItem("ownerToken"); TOKEN = null; render(); throw new Error("Signed out"); }
+  if (raw) return r;
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.message || "Request failed");
+  return j;
+}
+function login() {
+  $("#nav").hidden = $("#logout").hidden = true; $("#who").textContent = "";
+  $("#main").innerHTML = `<div class="card login"><h2>Sign in</h2>
+    <input id="t" placeholder="Business (e.g. demo)" value="demo"><input id="u" placeholder="Username" autocomplete="username">
+    <input id="p" placeholder="PIN" type="password" inputmode="numeric" autocomplete="current-password">
+    <div class="err" id="e"></div><button class="primary" id="go">Sign in</button></div>`;
+  const go = async () => {
+    const r = await fetch("/api/v1/owner/sessions", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({tenant: $("#t").value, username: $("#u").value, pin: $("#p").value})});
+    const j = await r.json(); if (!r.ok) return $("#e").textContent = j.message;
+    TOKEN = j.token; sessionStorage.setItem("ownerToken", TOKEN); render();
+  };
+  $("#go").onclick = go; $("#p").onkeydown = e => { if (e.key === "Enter") go(); };
+}
+async function render() {
+  clearInterval(timer);
+  if (!TOKEN) return login();
+  $("#nav").hidden = $("#logout").hidden = false;
+  document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("on", b.dataset.tab === TAB));
+  OV = await api("overview");
+  $("#who").textContent = `${OV.owner} · ${OV.tenant}`;
+  if (TAB === "overview") { overview(); timer = setInterval(async () => { OV = await api("overview"); overview(); }, 10000); }
+  if (TAB === "reports") reports();
+  if (TAB === "menu") menu();
+}
+function overview() {
+  $("#main").innerHTML = `<div class="cards">${OV.branches.map(b => `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center"><h2>${esc(b.name)}</h2>
+      <span class="badge ${b.stale ? "bad" : "ok"}">${b.stale ? "Stale" : "Live"}</span></div>
+    <div class="big num">${money(b.today.sales_minor)}</div><div class="muted">Business day ${esc(b.business_date)} · ${b.today.checks} closed checks · ${b.today.web_orders} web</div>
+    <div class="kv"><span>Last sync</span><span class="${b.stale ? "bad" : ""}">${ago(b.last_sync_at)}</span>
+      <span>Unsynced events</span><span class="num ${b.unsynced_events ? "warn" : ""}">${b.unsynced_events}</span>
+      <span>Menu</span><span>v${esc(b.release?.version)} ${esc(b.release?.name)} <span class="muted">${b.release_activated_at ? "since " + new Date(b.release_activated_at).toLocaleDateString() : ""}</span></span>
+      <span>Tenders</span><span class="num">${Object.entries(b.today.tenders).map(([k, v]) => `${esc(k)} ${money(v)}`).join(" · ") || "–"}</span>
+      <span>Refunds / voids</span><span class="num">${money(b.today.refunds_minor)} / ${b.today.voids}</span>
+      <span>Online orders</span><span class="${b.accepting_online ? "ok" : "bad"}">${b.online_paused ? "Paused" : b.accepting_online ? "Accepting" : "Not accepting (branch offline)"}</span></div>
+    <div class="muted" style="font-size:12px">Figures as of branch event ${b.today.as_of_position} of ${b.branch_position}.</div>
+    <button data-pause="${esc(b.id)}" data-p="${b.online_paused ? 0 : 1}">${b.online_paused ? "Resume online orders" : "Pause online orders"}</button></div>`).join("")}</div>`;
+  document.querySelectorAll("[data-pause]").forEach(btn => btn.onclick = async () => { await api(`branches/${btn.dataset.pause}/intake`, {paused: btn.dataset.p === "1"}); render(); });
+}
+const REPORTS = {sales: "Net sales", collections: "Collections by tender", voids_approvals: "Voids & approvals", riders: "Rider balances", late_orders: "Late orders", service_speed: "Service speed", product_contribution: "Product contribution", till: "Till & variance"};
+async function reports(name = "sales") {
+  const today = new Date().toLocaleDateString("en-CA");
+  $("#main").innerHTML = `<div class="bar"><label>Report<select id="r">${Object.entries(REPORTS).map(([k, v]) => `<option value="${k}" ${k === name ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+    <label>From<input type="date" id="f" value="${today}"></label><label>To<input type="date" id="to" value="${today}"></label>
+    <label>Branches<select id="b"><option value="">All my branches</option>${OV.branches.map(b => `<option value="${esc(b.code)}">${esc(b.name)}</option>`).join("")}</select></label>
+    <button class="primary" id="run">Show</button><button id="csv">Download CSV</button></div><div id="out"></div>`;
+  const q = () => `?from=${$("#f").value}&to=${$("#to").value}${$("#b").value ? "&branches=" + $("#b").value : ""}`;
+  const run = async () => {
+    try {
+      const j = await api(`reports/${$("#r").value}${q()}`);
+      const rows = j.rows, cols = rows.length ? Object.keys(rows[0]) : [];
+      const isMoney = c => c.endsWith("_minor");
+      $("#out").innerHTML = `<div class="scope">Scope: ${esc(j.scope.tenant)} · ${esc(j.scope.branches.join(", "))} · business days ${esc(j.scope.from_business_day)} → ${esc(j.scope.to_business_day)} · ${esc(j.scope.currency.join(","))} · last synced ${Object.entries(j.scope.last_synced).map(([k, v]) => k + " " + ago(v)).join(", ")}</div>` +
+        (rows.length ? `<div class="tablewrap"><table><thead><tr>${cols.map(c => `<th>${esc(c.replace(/_minor$/, "").replace(/_/g, " "))}</th>`).join("")}</tr></thead><tbody>${rows.map(r => `<tr>${cols.map(c => `<td class="${isMoney(c) || typeof r[c] === "number" ? "n" : ""}">${isMoney(c) ? money(r[c]) : esc(r[c] === null ? "–" : typeof r[c] === "boolean" ? (r[c] ? "yes" : "no") : r[c])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : `<p class="muted">No rows for this scope.</p>`);
+    } catch (e) { $("#out").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+  };
+  $("#run").onclick = run; $("#r").onchange = run;
+  $("#csv").onclick = async () => {
+    const r = await api(`reports/${$("#r").value}${q()}&export=csv`, null, true);
+    const blob = await r.blob(), a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = `${$("#r").value}-${$("#f").value}-${$("#to").value}.csv`; a.click();
+  };
+  run();
+}
+async function menu() {
+  const rel = (await api("releases")).releases;
+  $("#main").innerHTML = `<div class="cards"><div class="card"><h2>Releases</h2>
+      <table><thead><tr><th>Version</th><th>Name</th><th>Status</th><th>Active at</th><th></th></tr></thead><tbody>${rel.map(r =>
+      `<tr><td>v${r.version}</td><td>${esc(r.name)}</td><td>${esc(r.status)}</td><td>${esc(r.active_at.join(", ") || "–")}</td>
+       <td><button data-pub="${esc(r.id)}">Publish…</button></td></tr>`).join("")}</tbody></table></div>
+    <div class="card"><h2>New version with price changes</h2>
+      <label class="muted">Based on <select id="base">${rel.map(r => `<option value="${esc(r.id)}">v${r.version} ${esc(r.name)}</option>`).join("")}</select></label>
+      <input id="nm" placeholder="Name, e.g. Summer prices">
+      <div id="chg"></div><button id="addchg">Add price change</button>
+      <div class="err" id="me"></div><button class="primary" id="create">Create draft</button></div></div>
+    <dialog id="pd"></dialog>`;
+  const addRow = () => { const d = document.createElement("div"); d.className = "bar"; d.innerHTML = `<input placeholder="product code" class="pc"><input placeholder="variant" class="vc" value="regular"><input placeholder="price Rs" type="number" class="pr">`; $("#chg").appendChild(d); };
+  addRow(); $("#addchg").onclick = addRow;
+  $("#create").onclick = async () => {
+    const price_changes = [...document.querySelectorAll("#chg .bar")].filter(r => r.querySelector(".pc").value).map(r => ({product: r.querySelector(".pc").value.trim(), variant: r.querySelector(".vc").value.trim(), price_minor: Math.round(Number(r.querySelector(".pr").value) * 100)}));
+    try { await api("releases", {base_release_id: $("#base").value, name: $("#nm").value, price_changes}); menu(); } catch (e) { $("#me").textContent = e.message; }
+  };
+  document.querySelectorAll("[data-pub]").forEach(btn => btn.onclick = () => {
+    const d = $("#pd");
+    d.innerHTML = `<div class="card" style="border:none"><h2>Publish to branches</h2>${OV.branches.map(b => `<label><input type="checkbox" value="${esc(b.id)}"> ${esc(b.name)} (now v${b.release?.version})</label>`).join("")}
+      <p class="muted">Branches not selected keep their current menu. Lines already on open checks keep their prices.</p><div class="err" id="pe"></div>
+      <div style="display:flex;gap:8px"><button id="pc">Cancel</button><button class="primary" id="pg">Publish</button></div></div>`;
+    d.showModal();
+    $("#pc").onclick = () => d.close();
+    $("#pg").onclick = async () => {
+      const ids = [...d.querySelectorAll("input:checked")].map(i => i.value);
+      try { await api(`releases/${btn.dataset.pub}/publish`, {branch_ids: ids}); d.close(); OV = await api("overview"); menu(); } catch (e) { $("#pe").textContent = e.message; }
+    };
+  });
+}
+document.querySelectorAll("#nav button").forEach(b => b.onclick = () => { TAB = b.dataset.tab; render(); });
+$("#logout").onclick = () => { sessionStorage.removeItem("ownerToken"); TOKEN = null; render(); };
+render();
+</script>
+</body>
+</html>

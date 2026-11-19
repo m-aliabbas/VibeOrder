@@ -1,0 +1,61 @@
+{
+ "server_time": "2026-11-18T13:11:11.366728Z",
+ "branch": {
+  "id": "159565e9-97b5-5967-99ee-e818dd8acdeb",
+  "code": "B1",
+  "name": "Demo Pizzeria – Gulberg",
+  "currency": "PKR",
+  "timezone": "Asia/Karachi",
+  "business_date": "2026-11-18"
+ },
+ "staff": {
+  "id": "a06024c8-cf0a-54b1-99bc-f2d669604bd6",
+  "display_name": "Bilal (Waiter)",
+  "username": "bilal"
+ },
+ "device": {
+  "id": "5d1a0049-9425-4390-8b9d-f034c3cef04c",
+  "name": "smoke-bilal",
+  "kind": "tablet"
+ },
+ "roles": [
+  "waiter"
+ ],
+ "permissions": [
+  "check.append",
+  "check.open",
+  "check.request_bill",
+  "check.view",
+  "floor.view",
+  "menu.view",
+  "quote",
+  "check.amend",
+  "check.move"
+ ],
+ "stations": [
+  {
+   "id": "c6828626-99b9-51fe-83eb-678a13f4d8ba",
+   "code": "fryer",
+   "name": "Fryer",
+   "is_packing": false
+  },
+  {
+   "id": "02535f14-9ab9-56cd-b23c-feb92908facf",
+   "code": "packing",
+   "name": "Packing",
+   "is_packing": true
+  },
+  {
+   "id": "f797fa66-37cb-5310-a4f1-3ca6b50f7c0a",
+   "code": "pizza",
+   "name": "Pizza oven",
+   "is_packing": false
+  }
+ ],
+ "menu_release": {
+  "id": "0499911d-ad9e-58d8-9269-057c1a8e19b0",
+  "version": 1,
+  "name": "Menu 1"
+ },
+ "active_shift": null
+}

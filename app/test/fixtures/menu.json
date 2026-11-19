@@ -1,0 +1,609 @@
+{
+ "release": {
+  "id": "0499911d-ad9e-58d8-9269-057c1a8e19b0",
+  "version": 1,
+  "name": "Menu 1",
+  "mixed_policy": "higher",
+  "tax_rate_bp": 0
+ },
+ "currency": "PKR",
+ "categories": [
+  {
+   "code": "deals",
+   "name": "Deals",
+   "products": [
+    {
+     "code": "family-deal",
+     "name": "Family Deal",
+     "name_local": "فیملی ڈیل",
+     "kind": "deal",
+     "station": "packing",
+     "description": "1 large pizza (any flavour or half & half) + 1.5L drink",
+     "available": true,
+     "variants": [
+      {
+       "code": "regular",
+       "name": "Regular",
+       "price_minor": 200000
+      }
+     ],
+     "option_groups": [],
+     "slots": [
+      {
+       "code": "pizza",
+       "name": "Large pizza",
+       "quantity": 1,
+       "choices": [
+        {
+         "product": "tikka",
+         "variant": "large",
+         "upgrade_minor": 0
+        },
+        {
+         "product": "fajita",
+         "variant": "large",
+         "upgrade_minor": 0
+        },
+        {
+         "product": "cheese-lover",
+         "variant": "large",
+         "upgrade_minor": 0
+        },
+        {
+         "product": "veggie",
+         "variant": "large",
+         "upgrade_minor": 0
+        },
+        {
+         "product": "pepperoni",
+         "variant": "large",
+         "upgrade_minor": 10000
+        },
+        {
+         "product": "mixed-pizza",
+         "variant": "large",
+         "upgrade_minor": 0
+        }
+       ]
+      },
+      {
+       "code": "drink",
+       "name": "1.5L drink",
+       "quantity": 1,
+       "choices": [
+        {
+         "product": "cola-1500",
+         "variant": "regular",
+         "upgrade_minor": 0
+        },
+        {
+         "product": "lemon-1500",
+         "variant": "regular",
+         "upgrade_minor": 0
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "code": "pizza",
+   "name": "Pizza",
+   "products": [
+    {
+     "code": "mixed-pizza",
+     "name": "Half & Half Pizza",
+     "name_local": "آدھا آدھا پیزا",
+     "kind": "mixed_pizza",
+     "station": "pizza",
+     "description": "Two flavours, one pizza",
+     "available": true,
+     "variants": [],
+     "option_groups": [
+      "crust",
+      "toppings"
+     ],
+     "slots": []
+    },
+    {
+     "code": "tikka",
+     "name": "Chicken Tikka",
+     "name_local": "چکن تکہ",
+     "kind": "pizza",
+     "station": "pizza",
+     "description": "",
+     "available": true,
+     "variants": [
+      {
+       "code": "small",
+       "name": "Small",
+       "price_minor": 65000
+      },
+      {
+       "code": "medium",
+       "name": "Medium",
+       "price_minor": 100000
+      },
+      {
+       "code": "large",
+       "name": "Large",
+       "price_minor": 140000
+      }
+     ],
+     "option_groups": [
+      "crust",
+      "toppings"
+     ],
+     "slots": []
+    },
+    {
+     "code": "fajita",
+     "name": "Chicken Fajita",
+     "name_local": "چکن فجیتا",
+     "kind": "pizza",
+     "station": "pizza",
+     "description": "",
+     "available": true,
+     "variants": [
+      {
+       "code": "small",
+       "name": "Small",
+       "price_minor": 75000
+      },
+      {
+       "code": "medium",
+       "name": "Medium",
+       "price_minor": 115000
+      },
+      {
+       "code": "large",
+       "name": "Large",
+       "price_minor": 160000
+      }
+     ],
+     "option_groups": [
+      "crust",
+      "toppings"
+     ],
+     "slots": []
+    },
+    {
+     "code": "cheese-lover",
+     "name": "Cheese Lover",
+     "name_local": "چیز لوور",
+     "kind": "pizza",
+     "station": "pizza",
+     "description": "",
+     "available": true,
+     "variants": [
+      {
+       "code": "small",
+       "name": "Small",
+       "price_minor": 60000
+      },
+      {
+       "code": "medium",
+       "name": "Medium",
+       "price_minor": 95000
+      },
+      {
+       "code": "large",
+       "name": "Large",
+       "price_minor": 130000
+      }
+     ],
+     "option_groups": [
+      "crust",
+      "toppings"
+     ],
+     "slots": []
+    },
+    {
+     "code": "veggie",
+     "name": "Garden Veggie",
+     "name_local": "سبزی",
+     "kind": "pizza",
+     "station": "pizza",
+     "description": "",
+     "available": true,
+     "variants": [
+      {
+       "code": "small",
+       "name": "Small",
+       "price_minor": 55000
+      },
+      {
+       "code": "medium",
+       "name": "Medium",
+       "price_minor": 90000
+      },
+      {
+       "code": "large",
+       "name": "Large",
+       "price_minor": 125000
+      }
+     ],
+     "option_groups": [
+      "crust",
+      "toppings"
+     ],
+     "slots": []
+    },
+    {
+     "code": "pepperoni",
+     "name": "Beef Pepperoni",
+     "name_local": "پیپرونی",
+     "kind": "pizza",
+     "station": "pizza",
+     "description": "",
+     "available": true,
+     "variants": [
+      {
+       "code": "small",
+       "name": "Small",
+       "price_minor": 80000
+      },
+      {
+       "code": "medium",
+       "name": "Medium",
+       "price_minor": 120000
+      },
+      {
+       "code": "large",
+       "name": "Large",
+       "price_minor": 170000
+      }
+     ],
+     "option_groups": [
+      "crust",
+      "toppings"
+     ],
+     "slots": []
+    }
+   ]
+  },
+  {
+   "code": "sides",
+   "name": "Sides",
+   "products": [
+    {
+     "code": "fries",
+     "name": "Fries",
+     "name_local": "فرائز",
+     "kind": "item",
+     "station": "fryer",
+     "description": "",
+     "available": true,
+     "variants": [
+      {
+       "code": "regular",
+       "name": "Regular",
+       "price_minor": 35000
+      },
+      {
+       "code": "large",
+       "name": "Large",
+       "price_minor": 50000
+      }
+     ],
+     "option_groups": [],
+     "slots": []
+    },
+    {
+     "code": "wings",
+     "name": "Hot Wings (6)",
+     "name_local": "",
+     "kind": "item",
+     "station": "fryer",
+     "description": "",
+     "available": true,
+     "variants": [
+      {
+       "code": "regular",
+       "name": "Regular",
+       "price_minor": 65000
+      }
+     ],
+     "option_groups": [],
+     "slots": []
+    }
+   ]
+  },
+  {
+   "code": "drinks",
+   "name": "Drinks",
+   "products": [
+    {
+     "code": "cola-1500",
+     "name": "Cola 1.5L",
+     "name_local": "",
+     "kind": "item",
+     "station": "packing",
+     "description": "",
+     "available": true,
+     "variants": [
+      {
+       "code": "regular",
+       "name": "Regular",
+       "price_minor": 25000
+      }
+     ],
+     "option_groups": [],
+     "slots": []
+    },
+    {
+     "code": "lemon-1500",
+     "name": "Lemon-lime 1.5L",
+     "name_local": "",
+     "kind": "item",
+     "station": "packing",
+     "description": "",
+     "available": true,
+     "variants": [
+      {
+       "code": "regular",
+       "name": "Regular",
+       "price_minor": 25000
+      }
+     ],
+     "option_groups": [],
+     "slots": []
+    },
+    {
+     "code": "cola-500",
+     "name": "Cola 500ml",
+     "name_local": "",
+     "kind": "item",
+     "station": "packing",
+     "description": "",
+     "available": true,
+     "variants": [
+      {
+       "code": "regular",
+       "name": "Regular",
+       "price_minor": 12000
+      }
+     ],
+     "option_groups": [],
+     "slots": []
+    },
+    {
+     "code": "water-500",
+     "name": "Water 500ml",
+     "name_local": "",
+     "kind": "item",
+     "station": "packing",
+     "description": "",
+     "available": true,
+     "variants": [
+      {
+       "code": "regular",
+       "name": "Regular",
+       "price_minor": 8000
+      }
+     ],
+     "option_groups": [],
+     "slots": []
+    }
+   ]
+  }
+ ],
+ "option_groups": [
+  {
+   "code": "crust",
+   "name": "Crust",
+   "kind": "crust",
+   "min": 1,
+   "max": 1,
+   "sides": false,
+   "options": [
+    {
+     "code": "regular",
+     "name": "Regular crust",
+     "default": true,
+     "excludes": [],
+     "available": true,
+     "prices": [
+      {
+       "size": "small",
+       "whole_minor": 0,
+       "half_minor": 0
+      },
+      {
+       "size": "medium",
+       "whole_minor": 0,
+       "half_minor": 0
+      },
+      {
+       "size": "large",
+       "whole_minor": 0,
+       "half_minor": 0
+      }
+     ]
+    },
+    {
+     "code": "thin",
+     "name": "Thin crust",
+     "default": false,
+     "excludes": [],
+     "available": true,
+     "prices": [
+      {
+       "size": "small",
+       "whole_minor": 0,
+       "half_minor": 0
+      },
+      {
+       "size": "medium",
+       "whole_minor": 0,
+       "half_minor": 0
+      },
+      {
+       "size": "large",
+       "whole_minor": 0,
+       "half_minor": 0
+      }
+     ]
+    },
+    {
+     "code": "stuffed",
+     "name": "Stuffed crust",
+     "default": false,
+     "excludes": [],
+     "available": true,
+     "prices": [
+      {
+       "size": "small",
+       "whole_minor": 10000,
+       "half_minor": 0
+      },
+      {
+       "size": "medium",
+       "whole_minor": 15000,
+       "half_minor": 0
+      },
+      {
+       "size": "large",
+       "whole_minor": 20000,
+       "half_minor": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "code": "toppings",
+   "name": "Extra toppings",
+   "kind": "topping",
+   "min": 0,
+   "max": 4,
+   "sides": true,
+   "options": [
+    {
+     "code": "extra-cheese",
+     "name": "Extra cheese",
+     "default": false,
+     "excludes": [],
+     "available": true,
+     "prices": [
+      {
+       "size": "small",
+       "whole_minor": 10000,
+       "half_minor": 5000
+      },
+      {
+       "size": "medium",
+       "whole_minor": 14000,
+       "half_minor": 7000
+      },
+      {
+       "size": "large",
+       "whole_minor": 18000,
+       "half_minor": 10000
+      }
+     ]
+    },
+    {
+     "code": "olives",
+     "name": "Black olives",
+     "default": false,
+     "excludes": [],
+     "available": true,
+     "prices": [
+      {
+       "size": "small",
+       "whole_minor": 6000,
+       "half_minor": 3000
+      },
+      {
+       "size": "medium",
+       "whole_minor": 9000,
+       "half_minor": 5000
+      },
+      {
+       "size": "large",
+       "whole_minor": 12000,
+       "half_minor": 6000
+      }
+     ]
+    },
+    {
+     "code": "jalapeno",
+     "name": "Jalapeño",
+     "default": false,
+     "excludes": [],
+     "available": true,
+     "prices": [
+      {
+       "size": "small",
+       "whole_minor": 6000,
+       "half_minor": 3000
+      },
+      {
+       "size": "medium",
+       "whole_minor": 9000,
+       "half_minor": 5000
+      },
+      {
+       "size": "large",
+       "whole_minor": 12000,
+       "half_minor": 6000
+      }
+     ]
+    },
+    {
+     "code": "mushrooms",
+     "name": "Mushrooms",
+     "default": false,
+     "excludes": [],
+     "available": true,
+     "prices": [
+      {
+       "size": "small",
+       "whole_minor": 8000,
+       "half_minor": 4000
+      },
+      {
+       "size": "medium",
+       "whole_minor": 11000,
+       "half_minor": 6000
+      },
+      {
+       "size": "large",
+       "whole_minor": 15000,
+       "half_minor": 8000
+      }
+     ]
+    },
+    {
+     "code": "no-cheese",
+     "name": "No cheese",
+     "default": false,
+     "excludes": [
+      "extra-cheese"
+     ],
+     "available": true,
+     "prices": [
+      {
+       "size": "small",
+       "whole_minor": 0,
+       "half_minor": 0
+      },
+      {
+       "size": "medium",
+       "whole_minor": 0,
+       "half_minor": 0
+      },
+      {
+       "size": "large",
+       "whole_minor": 0,
+       "half_minor": 0
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "server_time": "2026-11-18T13:11:11.331516Z"
+}

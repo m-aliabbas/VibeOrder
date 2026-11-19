@@ -1,0 +1,103 @@
+{
+ "areas": [
+  {
+   "id": "8c198343-63af-5e99-aedc-91c597271fe2",
+   "code": "main",
+   "name": "Main hall",
+   "tables": [
+    {
+     "id": "aec53cce-2819-5cad-8c50-b22ae128b760",
+     "label": "1",
+     "seats": 4,
+     "occupied": false,
+     "check": null
+    },
+    {
+     "id": "72188e58-84fc-5aea-ad95-5b3f7f0c65aa",
+     "label": "2",
+     "seats": 4,
+     "occupied": false,
+     "check": null
+    },
+    {
+     "id": "455e68d7-dfe3-5e48-ac38-b31345ed0091",
+     "label": "3",
+     "seats": 4,
+     "occupied": false,
+     "check": null
+    },
+    {
+     "id": "adb74131-d44f-58c4-a2e6-340bc6e8270c",
+     "label": "4",
+     "seats": 4,
+     "occupied": false,
+     "check": null
+    },
+    {
+     "id": "b1c14f3b-5c36-5a03-b82c-906447e21a77",
+     "label": "5",
+     "seats": 4,
+     "occupied": false,
+     "check": null
+    },
+    {
+     "id": "43e18001-aefb-58db-aa49-0838d684611a",
+     "label": "6",
+     "seats": 4,
+     "occupied": false,
+     "check": null
+    },
+    {
+     "id": "e5973fcd-1456-5a1d-91b6-8803f0e7dcbe",
+     "label": "7",
+     "seats": 4,
+     "occupied": false,
+     "check": null
+    },
+    {
+     "id": "1328f408-6313-5eb3-bbb5-ea1d6c2b4a65",
+     "label": "8",
+     "seats": 4,
+     "occupied": false,
+     "check": null
+    }
+   ]
+  },
+  {
+   "id": "05fb1d43-fd65-51a3-801a-a888b8a293e9",
+   "code": "family",
+   "name": "Family hall",
+   "tables": [
+    {
+     "id": "e6e9d0d4-1e7f-5975-ae05-7fc309365f4d",
+     "label": "F1",
+     "seats": 8,
+     "occupied": false,
+     "check": null
+    },
+    {
+     "id": "921f4095-784d-5823-a284-4e00bc73a182",
+     "label": "F2",
+     "seats": 8,
+     "occupied": false,
+     "check": null
+    },
+    {
+     "id": "707f8602-5e9c-5fdf-b048-0bbaca55c882",
+     "label": "F3",
+     "seats": 8,
+     "occupied": false,
+     "check": null
+    },
+    {
+     "id": "1f1ff2c6-9c30-51ec-88a6-c39f708fcebb",
+     "label": "F4",
+     "seats": 8,
+     "occupied": false,
+     "check": null
+    }
+   ]
+  }
+ ],
+ "server_time": "2026-11-18T13:11:11.350266Z"
+}

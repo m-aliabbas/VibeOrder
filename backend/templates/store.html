@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Order online</title>
+<style>
+  :root { --bg:#fbf7f2; --panel:#ffffff; --ink:#221a14; --muted:#7a6a5c; --line:#eadfd3; --accent:#d9480f;
+          --accent-ink:#fff; --ok:#2b8a3e; --bad:#c92a2a; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14110f; --panel:#1f1a17; --ink:#f5efe8; --muted:#b3a597; --line:#3a312b; --accent:#ff7a1a; --accent-ink:#1b0f05; }
+  }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.45 system-ui, -apple-system, "Segoe UI", "Noto Nastaliq Urdu", sans-serif; }
+  header { position:sticky; top:0; z-index:5; background:var(--panel); border-bottom:1px solid var(--line); padding:12px 16px; display:flex; gap:12px; align-items:center; }
+  header h1 { font-size:18px; margin:0; flex:1; }
+  main { max-width:760px; margin:0 auto; padding:16px 16px 120px; }
+  h2 { font-size:15px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:28px 0 10px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px; }
+  .list { display:grid; gap:10px; }
+  .prod { display:flex; gap:12px; align-items:center; justify-content:space-between; }
+  .prod .name { font-weight:650; }
+  .prod .local { color:var(--muted); font-size:14px; }
+  .prod .desc { color:var(--muted); font-size:14px; }
+  .price { font-weight:700; white-space:nowrap; }
+  button { font:inherit; min-height:48px; padding:10px 16px; border-radius:12px; border:1px solid var(--line); background:var(--panel); color:var(--ink); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:700; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .soldout { color:var(--bad); font-weight:600; font-size:14px; }
+  .branches { display:grid; gap:10px; }
+  .branch { text-align:left; display:flex; flex-direction:column; align-items:flex-start; gap:2px; width:100%; }
+  .muted { color:var(--muted); }
+  .bar { position:fixed; left:0; right:0; bottom:0; background:var(--panel); border-top:1px solid var(--line); padding:12px 16px; display:flex; justify-content:center; }
+  .bar button { width:100%; max-width:728px; }
+  dialog { border:none; border-radius:16px; padding:0; width:min(560px, 100vw - 24px); background:var(--panel); color:var(--ink); }
+  dialog::backdrop { background:rgba(0,0,0,.45); }
+  .sheet { padding:18px; display:flex; flex-direction:column; gap:14px; max-height:85vh; overflow:auto; }
+  .sheet h3 { margin:0; font-size:20px; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chip { min-height:44px; }
+  .chip.on { border-color:var(--accent); color:var(--accent); font-weight:700; }
+  label.field { display:flex; flex-direction:column; gap:6px; font-weight:600; }
+  input, select, textarea { font:inherit; padding:12px; border-radius:10px; border:1px solid var(--line); background:var(--bg); color:var(--ink); }
+  .row { display:flex; justify-content:space-between; gap:12px; }
+  .total { font-size:20px; font-weight:800; }
+  .err { color:var(--bad); font-weight:600; }
+  .qty { display:flex; align-items:center; gap:8px; }
+  .qty button { min-width:44px; padding:6px; }
+  .notice { background:#fff3bf; color:#5c3d00; border-radius:10px; padding:10px 12px; }
+  @media (prefers-color-scheme: dark) { .notice { background:#3b2a12; color:#ffd59a; } }
+</style>
+</head>
+<body>
+<header><h1 id="title">Order online</h1><span id="branchName" class="muted"></span></header>
+<main id="app"><p class="muted">Loading…</p></main>
+<div class="bar" id="bar" hidden><button class="primary" id="basketBtn"></button></div>
+<dialog id="dlg"><div class="sheet" id="sheet"></div></dialog>
+<script>
+const SLUG = "{{ slug|escapejs }}";
+let CODE = "{{ code|escapejs }}";
+const API = "/api/v1";
+const app = document.getElementById("app"), dlg = document.getElementById("dlg"), sheet = document.getElementById("sheet");
+let MENU = null, BASKET = [], seq = 0;
+const money = m => "Rs " + (m / 100).toLocaleString("en-PK", {maximumFractionDigits: 2});
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+async function api(path, body, headers) {
+  const r = await fetch(API + path, body ? {method: "POST", headers: {"Content-Type": "application/json", ...(headers||{})}, body: JSON.stringify(body)} : {});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(j.message || "Something went wrong"); e.status = r.status; e.body = j; throw e; }
+  return j;
+}
+function saveBasket() { try { sessionStorage.setItem("basket:" + SLUG + ":" + CODE, JSON.stringify(BASKET)); } catch (e) {} }
+function loadBasket() { try { BASKET = JSON.parse(sessionStorage.getItem("basket:" + SLUG + ":" + CODE) || "[]"); } catch (e) { BASKET = []; } }
+
+async function start() {
+  if (!CODE) return pickBranch();
+  loadBasket();
+  MENU = await api(`/store/${SLUG}/${CODE}/menu`);
+  document.getElementById("branchName").textContent = MENU.branch.name;
+  renderMenu();
+}
+async function pickBranch() {
+  const s = await api(`/store/${SLUG}`);
+  document.getElementById("title").textContent = s.store.name;
+  app.innerHTML = `<h2>Choose your branch</h2><div class="branches">${s.branches.map(b =>
+    `<button class="branch card" data-code="${esc(b.code)}"><b>${esc(b.name)}</b><span class="muted">${esc(b.address || "")}</span>
+     <span class="${b.accepting ? "" : "soldout"}">${esc(b.status_message)}</span></button>`).join("")}</div>`;
+  app.querySelectorAll("[data-code]").forEach(b => b.onclick = () => { location.href = `/s/${SLUG}/${b.dataset.code}/`; });
+}
+function groups() { const g = {}; MENU.option_groups.forEach(x => g[x.code] = x); return g; }
+function optPrice(opt, size, side) {
+  const p = opt.prices.find(x => x.size === size) || opt.prices.find(x => !x.size);
+  return p ? (side === "whole" ? p.whole_minor : p.half_minor) : 0;
+}
+function renderMenu() {
+  const b = MENU.branch;
+  let html = b.accepting ? "" : `<p class="notice">${esc(b.status_message)}. You can browse the menu.</p>`;
+  for (const c of MENU.categories) {
+    const prods = c.products;
+    html += `<h2>${esc(c.name)}</h2><div class="list">`;
+    for (const p of prods) {
+      const from = p.variants.length ? Math.min(...p.variants.map(v => v.price_minor)) : 0;
+      html += `<div class="card prod"><div><div class="name">${esc(p.name)} <span class="local">${esc(p.name_local || "")}</span></div>
+        ${p.description ? `<div class="desc">${esc(p.description)}</div>` : ""}
+        ${p.available ? `<div class="price">${p.kind === "mixed_pizza" ? "Choose two flavours" : (p.variants.length > 1 ? "from " : "") + money(from)}</div>` : `<div class="soldout">Sold out</div>`}</div>
+        <button data-p="${esc(p.code)}" ${p.available ? "" : "disabled"}>Add</button></div>`;
+    }
+    html += `</div>`;
+  }
+  app.innerHTML = html;
+  app.querySelectorAll("[data-p]").forEach(btn => btn.onclick = () => openBuilder(btn.dataset.p));
+  renderBar();
+}
+function product(code) { for (const c of MENU.categories) for (const p of c.products) if (p.code === code) return p; }
+function renderBar() {
+  const bar = document.getElementById("bar"), n = BASKET.reduce((a, i) => a + i.quantity, 0);
+  bar.hidden = n === 0;
+  document.getElementById("basketBtn").textContent = `View basket (${n})`;
+  document.getElementById("basketBtn").onclick = openBasket;
+}
+function chips(name, options, value, onPick) {
+  return `<div><div class="muted" style="margin-bottom:6px">${esc(name)}</div><div class="chips">${options.map(o =>
+    `<button class="chip ${o.value === value ? "on" : ""}" data-chip="${esc(name)}" data-v="${esc(o.value)}" ${o.disabled ? "disabled" : ""}>${esc(o.label)}</button>`).join("")}</div></div>`;
+}
+function openBuilder(code) {
+  const p = product(code), G = groups();
+  const pizzas = MENU.categories.flatMap(c => c.products).filter(x => x.kind === "pizza");
+  const st = {product: code, quantity: 1, variant: p.kind === "mixed_pizza" ? "large" : p.variants[0]?.code,
+              crust: "regular", toppings: {}, left: pizzas[0]?.code, right: pizzas[1]?.code, selections: {}};
+  if (p.kind === "deal") for (const s of p.slots) st.selections[s.code] = s.choices[0];
+  const draw = async () => {
+    let html = `<h3>${esc(p.name)}</h3>`;
+    const isPizza = p.kind === "pizza" || p.kind === "mixed_pizza";
+    if (p.kind === "mixed_pizza") {
+      const sizes = pizzas[0].variants.map(v => ({value: v.code, label: v.name}));
+      html += chips("Size", sizes, st.variant);
+      const fl = pizzas.map(x => ({value: x.code, label: x.name, disabled: !x.available}));
+      html += chips("LEFT half", fl, st.left) + chips("RIGHT half", fl, st.right);
+    } else if (p.variants.length > 1 && p.kind !== "deal") {
+      html += chips("Size", p.variants.map(v => ({value: v.code, label: `${v.name} · ${money(v.price_minor)}`})), st.variant);
+    }
+    if (isPizza && G.crust) html += chips("Crust", G.crust.options.map(o => ({value: o.code, label: o.name + (optPrice(o, st.variant, "whole") ? ` +${money(optPrice(o, st.variant, "whole"))}` : ""), disabled: !o.available})), st.crust);
+    if (isPizza && G.toppings) {
+      html += `<div><div class="muted" style="margin-bottom:6px">Extra toppings (whole pizza)</div><div class="chips">${G.toppings.options.filter(o => o.code !== "no-cheese").map(o =>
+        `<button class="chip ${st.toppings[o.code] ? "on" : ""}" data-top="${esc(o.code)}" ${o.available ? "" : "disabled"}>${esc(o.name)} +${money(optPrice(o, st.variant, "whole"))}</button>`).join("")}</div></div>`;
+    }
+    if (p.kind === "deal") {
+      for (const s of p.slots) {
+        html += chips(s.name, s.choices.map(c => ({value: c.product + "|" + c.variant, label: (product(c.product)?.name || c.product) + (c.upgrade_minor ? ` +${money(c.upgrade_minor)}` : ""), disabled: !product(c.product)?.available})),
+                      st.selections[s.code].product + "|" + st.selections[s.code].variant);
+      }
+    }
+    html += `<div class="row"><div class="qty"><button data-q="-1">−</button><b>${st.quantity}</b><button data-q="1">+</button></div>
+             <span class="total" id="lineTotal">…</span></div><div class="err" id="bErr"></div>
+             <div class="row"><button data-close>Cancel</button><button class="primary" data-add>Add to basket</button></div>`;
+    sheet.innerHTML = html;
+    sheet.querySelectorAll("[data-chip]").forEach(b => b.onclick = () => {
+      const k = b.dataset.chip, v = b.dataset.v;
+      if (k === "Size") st.variant = v; else if (k === "Crust") st.crust = v;
+      else if (k === "LEFT half") st.left = v; else if (k === "RIGHT half") st.right = v;
+      else { const s = p.slots?.find(x => x.name === k); if (s) { const [pp, vv] = v.split("|"); st.selections[s.code] = s.choices.find(c => c.product === pp && c.variant === vv); } }
+      draw();
+    });
+    sheet.querySelectorAll("[data-top]").forEach(b => b.onclick = () => { st.toppings[b.dataset.top] = !st.toppings[b.dataset.top]; draw(); });
+    sheet.querySelectorAll("[data-q]").forEach(b => b.onclick = () => { st.quantity = Math.max(1, Math.min(20, st.quantity + Number(b.dataset.q))); draw(); });
+    sheet.querySelector("[data-close]").onclick = () => dlg.close();
+    const item = toItem(p, st);
+    sheet.querySelector("[data-add]").onclick = () => { BASKET.push({...item, label: describe(p, st)}); saveBasket(); dlg.close(); renderBar(); };
+    try {
+      const q = await api(`/store/${SLUG}/${CODE}/quotes`, {items: [item], service_type: "pickup"});
+      document.getElementById("lineTotal").textContent = money(q.subtotal_minor);
+    } catch (e) { document.getElementById("bErr").textContent = e.message; sheet.querySelector("[data-add]").disabled = true; }
+  };
+  draw();
+  dlg.showModal();
+}
+function toItem(p, st) {
+  const opts = Object.keys(st.toppings).filter(k => st.toppings[k]).map(id => ({id, side: "whole"}));
+  const id = "web-" + (++seq) + "-" + Date.now();
+  if (p.kind === "mixed_pizza") return {client_line_id: id, product: p.code, variant: st.variant, crust: st.crust, halves: {left: st.left, right: st.right}, options: opts, quantity: st.quantity};
+  if (p.kind === "pizza") return {client_line_id: id, product: p.code, variant: st.variant, crust: st.crust, options: opts, quantity: st.quantity};
+  if (p.kind === "deal") return {client_line_id: id, product: p.code, quantity: st.quantity, selections: p.slots.map(s => {
+    const c = st.selections[s.code], cp = product(c.product);
+    const sel = {slot: s.code, product: c.product, variant: c.variant};
+    if (cp && (cp.kind === "pizza" || cp.kind === "mixed_pizza")) { sel.crust = "regular"; if (cp.kind === "mixed_pizza") sel.halves = {left: st.left, right: st.right}; }
+    return sel; })};
+  return {client_line_id: id, product: p.code, variant: st.variant, quantity: st.quantity};
+}
+function describe(p, st) {
+  const v = p.variants.find(x => x.code === st.variant);
+  if (p.kind === "mixed_pizza") return `${product(st.left).variants.find(x => x.code === st.variant)?.name || st.variant} Half & Half: LEFT ${product(st.left).name}, RIGHT ${product(st.right).name}`;
+  if (p.kind === "deal") return p.name + ": " + p.slots.map(s => product(st.selections[s.code].product)?.name).join(" + ");
+  return (p.variants.length > 1 && v ? v.name + " " : "") + p.name;
+}
+async function openBasket() {
+  const zones = MENU.zones || [];
+  const st = JSON.parse(sessionStorage.getItem("checkout") || "{}");
+  st.service_type = st.service_type || "pickup";
+  const draw = async (error) => {
+    sheet.innerHTML = `<h3>Your order · ${esc(MENU.branch.name)}</h3>
+      <div class="list">${BASKET.map((i, n) => `<div class="row"><span>${i.quantity} × ${esc(i.label)}</span><button data-rm="${n}">Remove</button></div>`).join("")}</div>
+      ${chips("How", [{value: "pickup", label: "Pickup"}, ...(zones.length ? [{value: "delivery", label: "Delivery"}] : [])], st.service_type)}
+      ${st.service_type === "delivery" ? `<label class="field">Area<select id="zone">${zones.map(z => `<option value="${esc(z.code)}" ${st.zone_code === z.code ? "selected" : ""}>${esc(z.name)} · fee ${money(z.fee_minor)} · ~${z.eta_minutes} min</option>`).join("")}</select></label>
+        <label class="field">Address<textarea id="addr" rows="2">${esc(st.address_text || "")}</textarea></label>` : ""}
+      <label class="field">Name<input id="name" autocomplete="name" value="${esc(st.customer_name || "")}"></label>
+      <label class="field">Phone<input id="phone" type="tel" autocomplete="tel" value="${esc(st.phone || "")}" placeholder="03xx xxxxxxx"></label>
+      <label class="field">Notes (optional)<input id="notes" value="${esc(st.notes || "")}"></label>
+      <div class="row"><span class="muted">Pay cash on ${st.service_type === "delivery" ? "delivery" : "pickup"}</span><span class="total" id="tot">…</span></div>
+      <div class="err" id="cErr">${esc(error || "")}</div>
+      <div class="row"><button data-close>Keep browsing</button><button class="primary" id="place" ${MENU.branch.accepting ? "" : "disabled"}>Place order</button></div>`;
+    const read = () => { st.customer_name = sheet.querySelector("#name").value; st.phone = sheet.querySelector("#phone").value; st.notes = sheet.querySelector("#notes").value;
+      if (st.service_type === "delivery") { st.zone_code = sheet.querySelector("#zone").value; st.address_text = sheet.querySelector("#addr").value; }
+      sessionStorage.setItem("checkout", JSON.stringify(st)); };
+    sheet.querySelectorAll("[data-rm]").forEach(b => b.onclick = () => { read(); BASKET.splice(Number(b.dataset.rm), 1); saveBasket(); renderBar(); if (!BASKET.length) dlg.close(); else draw(); });
+    sheet.querySelectorAll("[data-chip]").forEach(b => b.onclick = () => { read(); st.service_type = b.dataset.v; if (!st.zone_code && zones[0]) st.zone_code = zones[0].code; draw(); });
+    sheet.querySelector("[data-close]").onclick = () => { read(); dlg.close(); };
+    if (st.service_type === "delivery") sheet.querySelector("#zone").onchange = () => { read(); draw(); };
+    const body = () => ({items: BASKET.map(({label, ...i}) => i), service_type: st.service_type, zone_code: st.zone_code, address_text: st.address_text,
+                         customer_name: st.customer_name, phone: st.phone, notes: st.notes, payment: "cod"});
+    let quote;
+    try { quote = await api(`/store/${SLUG}/${CODE}/quotes`, body()); document.getElementById("tot").textContent = money(quote.total_minor); }
+    catch (e) { document.getElementById("cErr").textContent = e.message; document.getElementById("place").disabled = true; return; }
+    document.getElementById("place").onclick = async (ev) => {
+      read(); ev.target.disabled = true;
+      const key = sessionStorage.getItem("orderKey") || crypto.randomUUID();
+      sessionStorage.setItem("orderKey", key);
+      try {
+        const r = await api(`/store/${SLUG}/${CODE}/orders`, {...body(), expected_total_minor: quote.total_minor}, {"Idempotency-Key": key});
+        sessionStorage.removeItem("orderKey"); BASKET = []; saveBasket();
+        location.href = `/t/${r.token}`;
+      } catch (e) {
+        if (e.body?.code === "price_changed") { sessionStorage.removeItem("orderKey"); return draw(`Prices changed: new total ${money(e.body.total_minor)}. Review and place again.`); }
+        if (e.status >= 400 && e.status < 500) sessionStorage.removeItem("orderKey");
+        document.getElementById("cErr").textContent = e.message + (e.status >= 500 || !e.status ? " Your order was not lost; tap again to retry safely." : "");
+        ev.target.disabled = false;
+      }
+    };
+  };
+  await draw();
+  if (!dlg.open) dlg.showModal();
+}
+start().catch(e => { app.innerHTML = `<p class="err">${esc(e.message)}</p>`; });
+</script>
+</body>
+</html>
