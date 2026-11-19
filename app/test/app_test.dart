@@ -5,10 +5,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vibeorder_staff/api/api_client.dart';
 import 'package:vibeorder_staff/api/menu.dart';
 import 'package:vibeorder_staff/main.dart';
+import 'package:vibeorder_staff/screens/alerts_screen.dart';
 import 'package:vibeorder_staff/screens/cashier_screen.dart';
 import 'package:vibeorder_staff/screens/dispatch_screen.dart';
 import 'package:vibeorder_staff/screens/order_screen.dart';
 import 'package:vibeorder_staff/screens/pizza_builder.dart';
+import 'package:vibeorder_staff/screens/stock_purchasing.dart';
+import 'package:vibeorder_staff/screens/stock_screen.dart';
 import 'package:vibeorder_staff/state/app_state.dart';
 import 'package:vibeorder_staff/widgets/common.dart';
 import 'package:vibeorder_staff/widgets/print_log.dart';
@@ -530,6 +533,90 @@ void main() {
     expect(fake.amendments.single, containsPair('action', 'split'));
     expect(fake.amendments.single['quantity'], 1);
     expect(fake.amendments.single['line_id'], 'L1');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('alerts: out-of-stock offers sold out; KOT print problem opens the ticket', (tester) async {
+    final (app, fake) = await cashierOn(
+      tester,
+      const AlertsScreen(),
+      perms: ['stock.view', 'availability.set', 'print.reprint'],
+    );
+    expect(find.text('Black olives is out of stock'), findsOneWidget);
+    expect(find.textContaining('may not have printed'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('alert-action-stock:out:olives')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('sellout-olives')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('sellout-confirm')));
+    await tester.pumpAndSettle();
+    expect(fake.availability.single['target_code'], 'olives');
+    expect(fake.availability.single['available'], false);
+    expect(find.text('Black olives is out of stock'), findsNothing);
+    expect(app.alertCounts['critical'], 1);
+    await tester.tap(find.byKey(const ValueKey('alert-action-print:J1')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('reprint-copy')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('recipes: missing recipe listed; changing fries publishes v2 with the observed version', (tester) async {
+    final (_, fake) = await cashierOn(tester, const RecipesTab(), perms: ['stock.view', 'stock.manage']);
+    expect(find.text('Wings'), findsOneWidget);
+    expect(find.text('Fries · regular'), findsOneWidget);
+    await tester.tap(find.text('Fries · regular'));
+    await tester.pumpAndSettle();
+    expect(find.text('Change recipe · v1 → v2'), findsOneWidget);
+    await tester.enterText(find.byKey(const ValueKey('recipe-qty-0')), '250');
+    await tester.enterText(find.byKey(const ValueKey('recipe-note')), 'bigger portion');
+    await tester.tap(find.byKey(const ValueKey('recipe-publish')));
+    await tester.pumpAndSettle();
+    final body = fake.recipesPublished.single;
+    expect(body['expected_version'], 1);
+    expect(body['size_code'], 'regular');
+    expect(body['components'], [
+      {'item': 'potato', 'quantity': '250'},
+      {'item': 'oil', 'quantity': '20'},
+    ]);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('purchase order from suggestions: 3 bags of cheese, created as sent, supplier message shown', (
+    tester,
+  ) async {
+    final (_, fake) = await cashierOn(tester, const PurchaseOrdersTab(), perms: ['stock.view', 'stock.manage']);
+    expect(find.text('Mozzarella'), findsOneWidget);
+    expect(find.textContaining('5 kg bag'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('po-from-suggestions')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('po-supplier')), 'Dairy Co');
+    await tester.tap(find.byKey(const ValueKey('po-save-send')));
+    await tester.pumpAndSettle();
+    final body = fake.purchaseOrders.single['request'] as Map<String, dynamic>;
+    expect(body['send'], true);
+    expect(body['supplier'], 'Dairy Co');
+    expect(body['lines'], [
+      {'item': 'cheese', 'quantity': '3', 'expected_cost_minor': 360000},
+    ]);
+    expect(find.byKey(const ValueKey('po-message')), findsOneWidget);
+    expect(find.byKey(const ValueKey('po-receive')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('count sheet: start, enter a count, manager sees variance and approves', (tester) async {
+    final (_, fake) = await cashierOn(tester, const CountSheetsTab(), perms: ['stock.view', 'stock.adjust']);
+    await tester.tap(find.byKey(const ValueKey('count-start')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('count-input-cheese')), '3500');
+    await tester.tap(find.byKey(const ValueKey('count-save')));
+    await tester.pumpAndSettle();
+    expect(fake.countCalls.first['lines'], [
+      {'item': 'cheese', 'counted': '3500'},
+    ]);
+    expect(find.textContaining('variance -500 g'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('count-approve')));
+    await tester.pumpAndSettle();
+    expect(fake.countCalls.last['action'], 'approve');
+    expect(fake.countCalls.last['expected_revision'], 2);
     await tester.pumpWidget(const SizedBox());
   });
 }

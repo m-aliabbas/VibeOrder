@@ -22,6 +22,41 @@ KEY_TABLES = ["orders_check", "cash_tender", "cash_drawermovement", "core_syncou
               "fulfillment_ridercollection", "stock_stockmovement"]
 
 
+def pg_tool(name):
+    """Full path of a PostgreSQL client tool when VIBEORDER_PG_BIN is set (Windows services have no useful PATH)."""
+    if settings.PG_BIN_DIR:
+        exe = Path(settings.PG_BIN_DIR) / (name + (".exe" if os.name == "nt" else ""))
+        return str(exe)
+    return name
+
+
+def prune_backups(keep=None, keep_daily=None):
+    """Keep the newest `keep` backups plus the first backup of each of the last `keep_daily` days. Deletes the
+    files and marks their records; returns the number removed."""
+    keep = settings.BACKUP_KEEP if keep is None else keep
+    keep_daily = settings.BACKUP_KEEP_DAILY if keep_daily is None else keep_daily
+    recs = list(BackupRecord.objects.filter(kind="backup", ok=True).exclude(path="").order_by("-created_at"))
+    keepers = {r.pk for r in recs[:keep]}
+    days = {}
+    for r in reversed(recs):  # oldest first → first backup of each day
+        days.setdefault(timezone.localtime(r.created_at).date(), r)
+    for d in sorted(days, reverse=True)[:keep_daily]:
+        keepers.add(days[d].pk)
+    removed = 0
+    for r in recs:
+        if r.pk in keepers:
+            continue
+        try:
+            Path(r.path).unlink(missing_ok=True)
+        except OSError:
+            continue
+        r.detail = {**(r.detail or {}), "pruned_at": timezone.now().isoformat()}
+        r.path = ""
+        r.save(update_fields=["path", "detail"])
+        removed += 1
+    return removed
+
+
 def _fernet():
     key = settings.BACKUP_KEY
     if not key:
@@ -50,7 +85,7 @@ def backup():
     out_dir = Path(settings.BACKUP_DIR)
     out_dir.mkdir(parents=True, exist_ok=True)
     pending = SyncOutbox.objects.filter(acked_at__isnull=True).count()
-    dump = subprocess.run(["pg_dump", "-Fc", *args, name], capture_output=True, env=env, check=False)
+    dump = subprocess.run([pg_tool("pg_dump"), "-Fc", *args, name], capture_output=True, env=env, check=False)
     if dump.returncode != 0:
         rec = BackupRecord.objects.create(host_id=settings.HOST_ID, path="", ok=False,
                                           detail={"error": dump.stderr.decode()[-300:]})
@@ -58,7 +93,10 @@ def backup():
     blob = _fernet().encrypt(dump.stdout)
     path = out_dir / f"vibeorder-{settings.HOST_ID}-{timezone.now():%Y%m%dT%H%M%S%f}.vob"
     path.write_bytes(blob)
-    os.chmod(path, 0o600)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:  # Windows: rely on the service account's folder ACL
+        pass
     rec = BackupRecord.objects.create(host_id=settings.HOST_ID, path=str(path), size_bytes=len(blob),
                                       sha256=hashlib.sha256(blob).hexdigest(), outbox_pending=pending,
                                       detail={"database": name, "plain_bytes": len(dump.stdout)})
@@ -73,13 +111,13 @@ def restore(path, target_db, drop_existing=False):
     blob = Path(path).read_bytes()
     plain = _fernet().decrypt(blob)
     if drop_existing:
-        subprocess.run(["dropdb", "--if-exists", *args, target_db], env=env, check=True, capture_output=True)
-    subprocess.run(["createdb", *args, target_db], env=env, check=True, capture_output=True)
+        subprocess.run([pg_tool("dropdb"), "--if-exists", *args, target_db], env=env, check=True, capture_output=True)
+    subprocess.run([pg_tool("createdb"), *args, target_db], env=env, check=True, capture_output=True)
     with tempfile.NamedTemporaryFile(suffix=".dump", delete=False) as f:
         f.write(plain)
         tmp = f.name
     try:
-        r = subprocess.run(["pg_restore", "--no-owner", "-d", target_db, *args, tmp], env=env, capture_output=True)
+        r = subprocess.run([pg_tool("pg_restore"), "--no-owner", "-d", target_db, *args, tmp], env=env, capture_output=True)
     finally:
         os.unlink(tmp)
     if r.returncode != 0:
@@ -89,7 +127,7 @@ def restore(path, target_db, drop_existing=False):
 
 def _counts(dbname, args, env, tables):
     sql = " UNION ALL ".join(f"SELECT '{t}', count(*) FROM {t}" for t in tables)
-    r = subprocess.run(["psql", "-At", "-F", "\t", *args, "-d", dbname, "-c", sql], env=env, capture_output=True,
+    r = subprocess.run([pg_tool("psql"), "-At", "-F", "\t", *args, "-d", dbname, "-c", sql], env=env, capture_output=True,
                        check=True)
     return {line.split("\t")[0]: int(line.split("\t")[1]) for line in r.stdout.decode().splitlines() if line}
 
@@ -111,7 +149,7 @@ def restore_drill(record=None):
     except Exception as exc:  # noqa: BLE001 - recorded for the operator
         ok, detail = False, {"backup_id": record.pk, "error": str(exc)[:300]}
     finally:
-        subprocess.run(["dropdb", "--if-exists", *args, scratch], env=env, capture_output=True)
+        subprocess.run([pg_tool("dropdb"), "--if-exists", *args, scratch], env=env, capture_output=True)
     return BackupRecord.objects.create(kind="restore_drill", host_id=settings.HOST_ID, path=record.path, ok=ok,
                                        detail=detail)
 
@@ -175,3 +213,19 @@ def reconciliation(branch):
         "rider_outstanding_minor": sum(r["outstanding_minor"] for r in rider_balances(branch)["riders"]),
         "server_time": timezone.now(),
     }
+
+
+def read_state(max_age_seconds=20):
+    """Branch supervisor state (manage.py run_branch); None when no supervisor ever ran on this host (dev)."""
+    import json
+    from datetime import datetime
+    path = settings.RUN_DIR / "supervisor.json"
+    if not path.exists():
+        return None
+    try:
+        st = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    updated = datetime.fromisoformat(st["updated_at"])
+    st["stale"] = st.get("stopped") or (timezone.now() - updated).total_seconds() > max_age_seconds
+    return st

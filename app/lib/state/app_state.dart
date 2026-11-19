@@ -45,6 +45,27 @@ class AppState extends ChangeNotifier {
 
   bool get isCashier => can('tender.take');
 
+  /// Roles that see at least one alert category (stock, kitchen, print, cash, system).
+  bool get seesAlerts => const ['stock.view', 'station.view', 'print.reprint', 'tender.take', 'ops.view'].any(can);
+
+  /// Alert counts by severity from the last `GET alerts` (drives the navigation badge).
+  Map<String, int> alertCounts = const {};
+
+  void setAlertCounts(Map<String, dynamic> counts) {
+    final next = {for (final e in counts.entries) e.key: (e.value as num).toInt()};
+    if (next.toString() == alertCounts.toString()) return;
+    alertCounts = next;
+    notifyListeners();
+  }
+
+  Future<void> refreshAlerts() async {
+    if (!seesAlerts || stage != Stage.ready) return;
+    try {
+      final r = await api.get('alerts');
+      setAlertCounts(Map<String, dynamic>.from(r.data['counts']));
+    } catch (_) {}
+  }
+
   Future<void> pair(String server, String code, String name) async {
     api.baseUrl = server.trim();
     api.deviceToken = null;
@@ -102,6 +123,7 @@ class AppState extends ChangeNotifier {
   void _clearSession() {
     api.sessionToken = null;
     bootstrap = null;
+    alertCounts = const {};
     notifyListeners();
   }
 

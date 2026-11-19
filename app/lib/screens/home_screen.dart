@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
+import 'alerts_screen.dart';
 import 'cashier_screen.dart';
 import '../widgets/print_log.dart';
 import 'devices_screen.dart';
@@ -20,11 +23,48 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int? index;
+  int stockTab = 0;
+  String? pendingDest;
+  Timer? alertTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    final app = context.read<AppState>();
+    app.refreshAlerts();
+    alertTimer = Timer.periodic(const Duration(seconds: 20), (_) => app.refreshAlerts());
+  }
+
+  @override
+  void dispose() {
+    alertTimer?.cancel();
+    super.dispose();
+  }
+
+  Widget _icon(Object o) => o is IconData ? Icon(o) : o as Widget;
+
+  Widget _alertIcon(AppState app) {
+    final critical = app.alertCounts['critical'] ?? 0;
+    final total = app.alertCounts.values.fold(0, (a, b) => a + b);
+    final icon = Icon(critical > 0 ? Icons.notifications_active : Icons.notifications_none);
+    if (total == 0) return icon;
+    return Badge(
+      key: const ValueKey('alert-badge'),
+      label: Text('${critical > 0 ? critical : total}'),
+      backgroundColor: critical > 0 ? Theme.of(context).colorScheme.error : Colors.orange.shade700,
+      child: icon,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
-    final dests = <(IconData, String, Widget)>[
+    void openStock(int tab) => setState(() {
+      stockTab = tab;
+      index = null;
+      pendingDest = 'Stock';
+    });
+    final dests = <(Object, String, Widget)>[
       if (app.can('floor.view')) (Icons.table_restaurant, 'Floor', const FloorScreen()),
       if (app.isCashier) (Icons.point_of_sale, 'Counter', const CashierScreen()),
       if (app.can('pack.verify') || app.can('delivery.manage'))
@@ -32,11 +72,17 @@ class _HomeScreenState extends State<HomeScreen> {
       if (app.can('delivery.view_own') && !app.can('delivery.manage'))
         (Icons.two_wheeler, 'My deliveries', const RiderJobsScreen()),
       if (app.can('shift.view')) (Icons.account_balance_wallet_outlined, 'Drawer', const ShiftScreen()),
-      if (app.can('stock.view')) (Icons.inventory_outlined, 'Stock', const StockScreen()),
+      if (app.seesAlerts) (_alertIcon(app), 'Alerts', AlertsScreen(onOpenStock: openStock)),
+      if (app.can('stock.view'))
+        (Icons.inventory_outlined, 'Stock', StockScreen(key: ValueKey('stock-$stockTab'), initialTab: stockTab)),
       if (app.can('print.reprint')) (Icons.receipt_long_outlined, 'KOT & receipts', const PrintLogScreen()),
       (Icons.print_outlined, 'Devices', const DevicesScreen()),
     ];
     // Role landing: cashiers start at the counter, everyone else at their first screen.
+    if (pendingDest != null) {
+      index = dests.indexWhere((d) => d.$2 == pendingDest);
+      pendingDest = null;
+    }
     index ??= app.isCashier ? dests.indexWhere((d) => d.$2 == 'Counter') : 0;
     if (index! < 0 || index! >= dests.length) index = 0;
     final index_ = index!;
@@ -95,7 +141,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-              destinations: [for (final d in dests) NavigationRailDestination(icon: Icon(d.$1), label: Text(d.$2))],
+              destinations: [for (final d in dests) NavigationRailDestination(icon: _icon(d.$1), label: Text(d.$2))],
             ),
             const VerticalDivider(width: 1),
             Expanded(child: body),
@@ -111,7 +157,7 @@ class _HomeScreenState extends State<HomeScreen> {
           : NavigationBar(
               selectedIndex: index_,
               onDestinationSelected: (i) => setState(() => index = i),
-              destinations: [for (final d in dests) NavigationDestination(icon: Icon(d.$1), label: d.$2)],
+              destinations: [for (final d in dests) NavigationDestination(icon: _icon(d.$1), label: d.$2)],
             ),
     );
   }

@@ -498,7 +498,7 @@ def device_health(branch):
                                 .select_related("printer", "ticket", "check_ref").order_by("-created_at")[:20]],
         })
     from apps.ops.models import SyncState
-    from apps.ops.services import backup_status
+    from apps.ops.services import backup_status, read_state
     pending = SyncOutbox.objects.filter(branch=branch, acked_at__isnull=True)
     oldest = pending.order_by("created_at").first()
     now = timezone.now()
@@ -515,6 +515,7 @@ def device_health(branch):
                   "last_success_at": st.last_success_at if st else None, "last_error": st.last_error if st else "",
                   "acked_position": st.acked_position if st else 0, "status": cloud_status},
         "printers": printers,
+        "services": read_state(),
         "devices": [{"id": str(d.pk), "name": d.name, "kind": d.kind, "last_seen_at": d.last_seen_at,
                      "revoked": d.revoked_at is not None} for d in Device.objects.filter(branch=branch).order_by("name")],
     }

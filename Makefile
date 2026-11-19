@@ -2,7 +2,7 @@
 PY := backend/.venv/bin/python
 MANAGE := cd backend && .venv/bin/python manage.py
 
-.PHONY: setup db reset seed server worker sync backup drill kds app-web app-macos test test-backend test-app smoke analyze
+.PHONY: setup db reset seed server worker sync backup drill kds app-web app-macos test test-backend test-app smoke analyze branch doctor restart-drill
 
 setup:            ## venv + deps + DBs + migrate + seed
 	cd backend && (test -d .venv || uv venv -q --python 3.13 .venv) && uv pip install -q --python .venv/bin/python -r requirements.txt
@@ -32,6 +32,15 @@ backup:           ## encrypted backup of the dev DB into backend/var/backups
 
 drill:            ## backup + restore drill into a scratch DB (verifies the backup)
 	$(MANAGE) backup_branch --drill
+
+branch:           ## production-style: supervisor (waitress server + print worker + backups), see deploy/README.md
+	$(MANAGE) run_branch
+
+doctor:           ## pre-flight check of this branch host
+	$(MANAGE) branch_doctor
+
+restart-drill:    ## crash the server after commits + full restart; must print RESTART DRILL OK
+	cd backend && .venv/bin/python scripts/restart_drill.py
 
 app-web:          ## build staff app for web and serve on :8081
 	cd app && flutter build web --release && python3 -m http.server 8081 --bind 127.0.0.1 --directory build/web

@@ -20,6 +20,100 @@ class FakeBackend {
   final handovers = <Map<String, dynamic>>[];
   final opened = <Map<String, dynamic>>[];
   final reprints = <Map<String, dynamic>>[];
+  final availability = <Map<String, dynamic>>[];
+  final recipesPublished = <Map<String, dynamic>>[];
+  final purchaseOrders = <Map<String, dynamic>>[];
+  final countCalls = <Map<String, dynamic>>[];
+  Map<String, dynamic>? countSheet;
+  final cheeseItem = {
+    'id': 'I1',
+    'code': 'cheese',
+    'name': 'Mozzarella',
+    'unit': 'g',
+    'purchase_unit': '5 kg bag',
+    'purchase_factor': '5000.000',
+    'on_hand': '4000.000',
+    'reorder_level': '5000.000',
+    'par_level': '15000.000',
+    'status': 'low',
+    'avg_cost_minor': '240',
+    'cost_missing': false,
+    'revision': 1,
+    'active': true,
+  };
+  Map<String, dynamic> po(String status) => {
+    'id': 'PO1',
+    'number': 'PO-B1-0001',
+    'status': status,
+    'revision': 1,
+    'supplier': {'id': 'S1', 'name': 'Dairy Co', 'phone': '0300 1234567'},
+    'expected_on': null,
+    'note': '',
+    'created_by': 'Zara (Manager)',
+    'created_at': '2026-11-18T10:00:00Z',
+    'sent_at': null,
+    'closed_reason': '',
+    'expected_total_minor': 0,
+    'receipts': <dynamic>[],
+    'message': 'Demo Pizzeria\nPurchase order PO-B1-0001\n\n- Mozzarella: 3 x 5 kg bag',
+    'lines': [
+      {
+        'id': 1,
+        'item': 'cheese',
+        'name': 'Mozzarella',
+        'unit': 'g',
+        'purchase_unit': '5 kg bag',
+        'purchase_factor': '5000.000',
+        'quantity': '15000.000',
+        'received': '0.000',
+        'outstanding': '15000.000',
+        'expected_cost_minor': 0,
+      },
+    ],
+  };
+  List<Map<String, dynamic>> alerts = [
+    {
+      'id': 'stock:out:olives',
+      'category': 'stock',
+      'severity': 'critical',
+      'title': 'Black olives is out of stock',
+      'detail': 'On hand 0 g. Still on sale: Olives',
+      'at': '2026-11-18T10:00:00Z',
+      'action': {
+        'type': 'sellout',
+        'targets': [
+          {'kind': 'option', 'code': 'olives', 'name': 'Olives'},
+        ],
+      },
+    },
+    {
+      'id': 'print:J1',
+      'category': 'print',
+      'severity': 'critical',
+      'title': 'KOT 17 #D001 may not have printed on Pizza kitchen printer',
+      'detail': 'Check the printer for this ticket. If missing, reprint a COPY.',
+      'at': '2026-11-18T10:00:00Z',
+      'action': {'type': 'reprint', 'job': 'J1'},
+    },
+  ];
+  final fries = {
+    'id': 'R1',
+    'target_kind': 'product',
+    'target_code': 'fries',
+    'size_code': 'regular',
+    'label': 'Fries',
+    'version': 1,
+    'active': true,
+    'note': '',
+    'created_by': null,
+    'created_at': '2026-11-18T10:00:00Z',
+    'cost_minor': 10100,
+    'cost_missing': false,
+    'components': [
+      {'item': 'potato', 'name': 'Frozen fries', 'unit': 'g', 'quantity': '200.000', 'cost_minor': 9000},
+      {'item': 'oil', 'name': 'Cooking oil', 'unit': 'ml', 'quantity': '20.000', 'cost_minor': 1100},
+    ],
+  };
   final kot = {
     'id': 'J1',
     'kind': 'kitchen',
@@ -306,6 +400,137 @@ class FakeBackend {
         ],
       };
       return json({'check_id': 'C1', 'revision': check['revision'], 'description': 'Table 1, pizza 1: removed'});
+    }
+    if (path == 'alerts') {
+      final counts = {'critical': 0, 'warning': 0, 'info': 0};
+      for (final a in alerts) {
+        counts[a['severity']] = counts[a['severity']]! + 1;
+      }
+      return json({'alerts': alerts, 'counts': counts});
+    }
+    if (path == 'availability' && req.method == 'GET') return json({'sold_out': availability});
+    if (path == 'availability') {
+      final body = jsonDecode(req.body) as Map<String, dynamic>;
+      availability.add({...body, 'actor': 'Zara (Manager)', 'since': '2026-11-18T10:05:00Z'});
+      alerts = [
+        for (final a in alerts)
+          if (a['id'] != 'stock:out:olives') a,
+      ];
+      return json({'target_kind': body['target_kind'], 'target_code': body['target_code'], 'available': false});
+    }
+    if (path == 'stock') {
+      return json({
+        'items': [cheeseItem],
+      });
+    }
+    if (path == 'stock/suppliers') {
+      return json({
+        'suppliers': [
+          {'id': 'S1', 'name': 'Dairy Co', 'phone': '0300 1234567', 'note': ''},
+        ],
+      });
+    }
+    if (path == 'stock/suggestions') {
+      return json({
+        'suggestions': [
+          {
+            ...cheeseItem,
+            'item': 'cheese',
+            'on_order': '0',
+            'suggested_packs': 3,
+            'suggested_quantity': '15000.000',
+            'estimated_cost_minor': 360000,
+          },
+        ],
+      });
+    }
+    if (path == 'stock/purchase-orders' && req.method == 'GET') return json({'orders': purchaseOrders});
+    if (path == 'stock/purchase-orders') {
+      final body = jsonDecode(req.body) as Map<String, dynamic>;
+      purchaseOrders.add({...po(body['send'] == true ? 'sent' : 'draft'), 'request': body});
+      return json(purchaseOrders.last, 201);
+    }
+    if (path == 'stock/purchase-orders/PO1') return json(purchaseOrders.last);
+    if (path == 'stock/count-sheets' && req.method == 'GET') {
+      return json({
+        'counts': [?countSheet],
+      });
+    }
+    if (path == 'stock/count-sheets') {
+      countSheet = {
+        'id': 'CS1',
+        'number': 'CT-B1-0001',
+        'status': 'open',
+        'revision': 1,
+        'created_by': 'Zara (Manager)',
+        'created_at': '2026-11-18T10:00:00Z',
+        'counted': 0,
+        'total': 1,
+        'variance_value_minor': 0,
+        'lines': [
+          {'item': 'cheese', 'name': 'Mozzarella', 'unit': 'g', 'counted': null, 'expected': null, 'variance': null},
+        ],
+      };
+      return json(countSheet!, 201);
+    }
+    if (path == 'stock/count-sheets/CS1' && req.method == 'GET') return json(countSheet!);
+    if (path == 'stock/count-sheets/CS1/lines' || path == 'stock/count-sheets/CS1') {
+      final body = jsonDecode(req.body) as Map<String, dynamic>;
+      countCalls.add({'path': path, ...body});
+      if (body['action'] == 'approve') {
+        countSheet = {...countSheet!, 'status': 'approved', 'variance_value_minor': -120000};
+        return json(countSheet!);
+      }
+      countSheet = {
+        ...countSheet!,
+        'revision': 2,
+        'counted': 1,
+        'variance_value_minor': -120000,
+        'lines': [
+          {
+            'item': 'cheese',
+            'name': 'Mozzarella',
+            'unit': 'g',
+            'counted': '3500.000',
+            'expected': '4000.000',
+            'variance': '-500.000',
+            'variance_value_minor': -120000,
+            'counted_by': 'Zara (Manager)',
+          },
+        ],
+      };
+      return json(countSheet!);
+    }
+    if (path == 'stock/recipes' && req.method == 'GET') {
+      return json({
+        'recipes': [fries],
+        'missing': [
+          {'target_kind': 'product', 'target_code': 'wings', 'size_code': '', 'label': 'Wings'},
+        ],
+        'targets': [
+          {
+            'target_kind': 'product',
+            'target_code': 'fries',
+            'label': 'Fries',
+            'required': true,
+            'sizes': [
+              {'code': 'regular', 'name': 'Regular'},
+            ],
+          },
+        ],
+        'items': [
+          {'code': 'potato', 'name': 'Frozen fries', 'unit': 'g'},
+          {'code': 'oil', 'name': 'Cooking oil', 'unit': 'ml'},
+        ],
+      });
+    }
+    if (path == 'stock/recipes') {
+      final body = jsonDecode(req.body) as Map<String, dynamic>;
+      recipesPublished.add(body);
+      return json({
+        'retired': false,
+        'recipe': {...fries, 'version': 2},
+      }, 201);
     }
     return json({'code': 'not_found', 'message': 'no route $path'}, 404);
   });

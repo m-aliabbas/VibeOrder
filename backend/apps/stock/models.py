@@ -35,6 +35,10 @@ class StockLevel(models.Model):
     on_hand = models.DecimalField(default=0, **QTY)
     avg_cost_minor = models.DecimalField(max_digits=16, decimal_places=4, null=True, blank=True,
                                          help_text="Minor units per base unit; null = cost unknown")
+    reorder_level = models.DecimalField(null=True, blank=True, help_text="Alert when on hand falls to this (base "
+                                        "units); null = no alert", **QTY)
+    par_level = models.DecimalField(null=True, blank=True, help_text="Order up to this (base units) when "
+                                    "suggesting purchase orders; null = twice the reorder level", **QTY)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -53,6 +57,8 @@ class Recipe(Stamped):
     size_code = models.CharField(max_length=30, blank=True, help_text="'' = any size")
     version = models.PositiveIntegerField(default=1)
     is_active = models.BooleanField(default=True)
+    note = models.CharField(max_length=200, blank=True, help_text="Why this version was published")
+    created_by = models.ForeignKey(Staff, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
 
     class Meta:
         constraints = [
@@ -100,10 +106,44 @@ class StockMovement(models.Model):
 class Supplier(Stamped):
     tenant = models.ForeignKey(Tenant, on_delete=models.PROTECT, related_name="suppliers")
     name = models.CharField(max_length=80)
+    phone = models.CharField(max_length=30, blank=True)
+    note = models.CharField(max_length=200, blank=True)
+    is_active = models.BooleanField(default=True)
+
+
+class PurchaseOrder(Stamped):
+    """What the branch asked a supplier for. Stock moves only when goods are received against it (each delivery is
+    a PurchaseReceipt), so a PO can be received in parts, and the rest closed short with a reason."""
+    STATUS = [("draft", "Draft"), ("sent", "Sent to supplier"), ("partial", "Partly received"),
+              ("received", "Received"), ("closed", "Closed short"), ("cancelled", "Cancelled")]
+
+    branch = models.ForeignKey(Branch, on_delete=models.PROTECT)
+    number = models.CharField(max_length=30, help_text="e.g. PO-B1-0007")
+    supplier = models.ForeignKey(Supplier, null=True, blank=True, on_delete=models.PROTECT)
+    status = models.CharField(max_length=10, choices=STATUS, default="draft")
+    expected_on = models.DateField(null=True, blank=True)
+    note = models.CharField(max_length=200, blank=True)
+    created_by = models.ForeignKey(Staff, on_delete=models.PROTECT, related_name="+")
+    sent_at = models.DateTimeField(null=True, blank=True)
+    closed_reason = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["branch", "number"], name="uniq_po_number")]
+
+
+class PurchaseOrderLine(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    order = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE, related_name="lines")
+    item = models.ForeignKey(StockItem, on_delete=models.PROTECT)
+    quantity = models.DecimalField(help_text="Ordered, base units", **QTY)
+    expected_cost_minor = models.BigIntegerField(default=0, help_text="Expected line total; 0 = unknown")
+    received = models.DecimalField(default=0, help_text="Received so far, base units", **QTY)
 
 
 class PurchaseReceipt(Stamped):
     branch = models.ForeignKey(Branch, on_delete=models.PROTECT)
+    purchase_order = models.ForeignKey(PurchaseOrder, null=True, blank=True, on_delete=models.PROTECT,
+                                       related_name="receipts")
     supplier = models.ForeignKey(Supplier, null=True, blank=True, on_delete=models.PROTECT)
     reference = models.CharField(max_length=60, blank=True, help_text="Supplier invoice / delivery note")
     total_minor = models.BigIntegerField(default=0)
@@ -120,3 +160,38 @@ class StockTransfer(Stamped):
     sent_by = models.ForeignKey(Staff, on_delete=models.PROTECT, related_name="+")
     received_by = models.ForeignKey(Staff, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
     received_at = models.DateTimeField(null=True, blank=True)
+
+
+class StockCount(Stamped):
+    """A count sheet: one counting session over many items. Each line records the theoretical on-hand at the
+    moment it was counted, so service can continue while counting; approval posts counted − expected-at-count."""
+    STATUS = [("open", "Counting"), ("submitted", "Waiting for approval"), ("approved", "Approved"),
+              ("cancelled", "Cancelled")]
+
+    branch = models.ForeignKey(Branch, on_delete=models.PROTECT)
+    number = models.CharField(max_length=30)
+    status = models.CharField(max_length=10, choices=STATUS, default="open")
+    note = models.CharField(max_length=200, blank=True)
+    created_by = models.ForeignKey(Staff, on_delete=models.PROTECT, related_name="+")
+    submitted_by = models.ForeignKey(Staff, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(Staff, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    approved_at = models.DateTimeField(null=True, blank=True)
+    business_date = models.DateField()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["branch", "number"], name="uniq_count_number")]
+
+
+class StockCountLine(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    count = models.ForeignKey(StockCount, on_delete=models.CASCADE, related_name="lines")
+    item = models.ForeignKey(StockItem, on_delete=models.PROTECT)
+    counted = models.DecimalField(null=True, blank=True, **QTY)
+    expected = models.DecimalField(null=True, blank=True, help_text="Theoretical on hand when counted", **QTY)
+    unit_cost_minor = models.DecimalField(max_digits=16, decimal_places=4, null=True, blank=True)
+    counted_at = models.DateTimeField(null=True, blank=True)
+    counted_by = models.ForeignKey(Staff, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["count", "item"], name="uniq_count_item")]

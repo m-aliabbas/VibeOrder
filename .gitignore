@@ -7,3 +7,5 @@ backend/staticfiles/
 .playwright-mcp/
 .DS_Store
 .env
+
+backend/branch.env

@@ -57,10 +57,18 @@ def menu(request, branch_id):
     return Response(serialize_menu(branch))
 
 
-@api_view(["POST"])
+@api_view(["GET", "POST"])
 def set_availability(request, branch_id):
-    """Branch sellout switch (manager)."""
-    branch_for(request, branch_id)
+    """Branch sellout switch (manager). GET lists what is currently sold out, with who and why."""
+    branch = branch_for(request, branch_id)
+    if request.method == "GET":
+        now = timezone.now()
+        rows = BranchAvailability.objects.filter(branch=branch, available=False).select_related("actor")
+        return Response({"sold_out": [
+            {"target_kind": r.target_kind, "target_code": r.target_code, "reason": r.reason,
+             "actor": r.actor.display_name if r.actor_id else None, "since": r.updated_at,
+             "expires_at": r.expires_at} for r in rows.order_by("-updated_at")
+            if r.expires_at is None or r.expires_at > now]})
     require(request, "availability.set")
     data = request.data
 

@@ -7,6 +7,7 @@
    so the client may refresh and resubmit under a new key.
 """
 import hashlib
+import os
 import json
 import uuid
 from datetime import date
@@ -161,7 +162,20 @@ def run_command(request, branch_id, intent, payload, handler, success_status=201
     except _ReplayExisting:
         existing = CommandReceipt.objects.get(branch=principal.branch, key=key)
         return _replay(existing, payload_hash, principal)
+    _maybe_crash(intent)
     return Response(body, status=status_code)
+
+
+def _maybe_crash(intent):
+    """Restart drill: die after commit, before the response, like a power cut at the worst moment."""
+    from django.conf import settings
+    targets = {t.strip() for t in settings.CRASH_AFTER_COMMIT.split(",") if t.strip()}
+    if intent in targets:
+        marker = settings.RUN_DIR / f"crashed-{intent}"
+        if not marker.exists():  # crash once per intent, so the retry after restart can complete
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text("1")
+            os._exit(17)
 
 
 def run_internal(principal, intent, handler, channel="staff"):

@@ -70,6 +70,18 @@ branch = [
     path("stock/counts", stock.count),
     path("stock/transfers", stock.transfer),
     path("stock/transfers/<uuid:transfer_id>/receive", stock.receive_transfer),
+    path("stock/items", stock.items),
+    path("stock/items/<uuid:item_id>", stock.item_update),
+    path("stock/recipes", stock.recipes),
+    path("stock/suppliers", stock.suppliers),
+    path("stock/suggestions", stock.suggestions),
+    path("stock/purchase-orders", stock.purchase_orders),
+    path("stock/purchase-orders/<uuid:po_id>", stock.purchase_order),
+    path("stock/purchase-orders/<uuid:po_id>/receive", stock.receive_po),
+    path("stock/count-sheets", stock.count_sheets),
+    path("stock/count-sheets/<uuid:count_id>", stock.count_sheet),
+    path("stock/count-sheets/<uuid:count_id>/lines", stock.enter_counts),
+    path("alerts", stock.alerts),
     path("reports/<str:name>", reports.report),
 ]
 

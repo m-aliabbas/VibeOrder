@@ -199,17 +199,26 @@ def post_packaging(ctx, check, items):
 
 # ---------------------------------------------------------------- reads
 
-def levels(branch):
-    rows = []
+def levels(branch, include_inactive=False):
     lv = {lv.item_id: lv for lv in StockLevel.objects.filter(branch=branch)}
-    for item in StockItem.objects.filter(tenant=branch.tenant, is_active=True).order_by("name"):
-        lvl = lv.get(item.pk)
-        rows.append({"id": str(item.pk), "code": item.code, "name": item.name, "unit": item.base_unit,
-                     "purchase_unit": item.purchase_unit, "purchase_factor": item.purchase_factor,
-                     "on_hand": lvl.on_hand if lvl else Decimal(0),
-                     "avg_cost_minor": lvl.avg_cost_minor if lvl else None,
-                     "cost_missing": not lvl or lvl.avg_cost_minor is None})
+    qs = StockItem.objects.filter(tenant=branch.tenant)
+    if not include_inactive:
+        qs = qs.filter(is_active=True)
+    rows = [_item_row(item, lv.get(item.pk)) for item in qs.order_by("name")]
     return {"items": rows, "server_time": timezone.now()}
+
+
+def _item_row(item, lvl):
+    on_hand = lvl.on_hand if lvl else Decimal(0)
+    reorder = lvl.reorder_level if lvl else None
+    status = "out" if on_hand <= 0 else ("low" if reorder is not None and on_hand <= reorder else "ok")
+    return {"id": str(item.pk), "code": item.code, "name": item.name, "unit": item.base_unit,
+            "purchase_unit": item.purchase_unit, "purchase_factor": item.purchase_factor,
+            "revision": item.revision, "active": item.is_active,
+            "on_hand": on_hand, "reorder_level": reorder, "par_level": lvl.par_level if lvl else None,
+            "status": status,
+            "avg_cost_minor": lvl.avg_cost_minor if lvl else None,
+            "cost_missing": not lvl or lvl.avg_cost_minor is None}
 
 
 def movements(branch, item_id=None, limit=100):

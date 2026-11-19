@@ -21,7 +21,8 @@ it) when done. Read the relevant spec section before coding; record any deviatio
 | `backend/apps/cash` | drawer shifts, movements, tenders, allocations, check close (`finalize_close`), refunds (`refunds.py`), payer receipts |
 | `backend/apps/orders/discounts.py` | order promotion + line adjustments → `CheckLine.discount_minor/tax_minor` (`apply_discounts`) |
 | `backend/apps/fulfillment` | customers (masked lookup, repeat order), delivery zones, deliveries + attempts, packing handover, rider collections/remittances |
-| `backend/apps/stock` | stock items, recipes (base/product/option/packaging by size), ledger with unique origin refs, receipts, losses, counts, transfers, moving average |
+| `backend/apps/stock` | stock items, recipes (base/product/option/packaging by size), ledger with unique origin refs, receipts, losses, counts, transfers, moving average; item master, reorder levels and versioned recipe publishing in `management_services.py` |
+| `backend/apps/ops/alerts.py` | alert centre (`GET alerts`): computed from live state per request, filtered by role via `CATEGORY_PERMS` |
 | `backend/apps/ops` | encrypted backups + restore drill, host fencing middleware, `take_over`, recovery report, `SyncState`, `OnlineImport` |
 | `backend/apps/cloud` | cloud profile: event ingest + owner projection, inbox/ack offers, storefront API, tracking, fake payment provider, owner portal API; branch side `branch_sync.py` + `sync_worker` |
 | `backend/apps/reports` | report definitions (spec 04) + CSV with scope header, used by branch managers and the owner portal |
@@ -40,6 +41,9 @@ make worker     # print worker → backend/var/spool/<queue>/*.txt (spooler fake
 make sync       # branch↔cloud sync workers for B1 + B2 (needed for storefront orders and owner figures)
 make backup     # encrypted DB backup → backend/var/backups ; make drill = backup + verified restore
 make app-web    # builds Flutter web, serves on http://127.0.0.1:8081
+make branch     # production-style supervisor: waitress + print worker + scheduled backups (deploy/README.md)
+make doctor     # pre-flight check of a branch host
+make restart-drill  # crash-after-commit + power-loss restart drill → RESTART DRILL OK
 make reset      # wipe dev DB and reseed
 ```
 
@@ -111,6 +115,15 @@ Look at UI: Flutter web renders to canvas, so drive it with Playwright mouse coo
 - Handover (`POST checks/{id}/handover`) is the packing gate: all live components ready, else `override_reason`
   + `pack.override`. Dispatch requires a handover. Delivered COD creates a `rider_cod` tender + `RiderCollection`
   and closes the check via `finalize_close`. Only a remittance touches the drawer (one movement).
+- Recipes are versioned: publish with `management_services.publish_recipe` (retires the active version, creates
+  N+1). Never edit `RecipeComponent` rows of a recipe that may have been consumed.
+- Purchasing / counts live in `apps/stock/purchasing.py`. A PO never moves stock; only `receive_po` (through
+  `services.receive`) does. Count approval posts the variance against the per-line snapshot, never "set to".
+- Branch host: `apps/ops/management/commands/run_branch.py` supervises `serve` (waitress), `print_worker`,
+  `sync_worker` and runs backups; settings can come from `backend/branch.env`. On Windows the PostgreSQL tools
+  path is `VIBEORDER_PG_BIN` (use `ops.services.pg_tool`).
+- Alerts: add a new kind as a function in `apps/ops/alerts.py` with a stable `id`, a category from
+  `CATEGORY_PERMS`, and an optional `action` the app knows (`sellout`, `reprint`, `receive`, `recipes`).
 - Stock: post through `stock.services.post()` with a unique `source_ref` (`ti:<item>`, `rv:<item>`,
   `pk:<item>`, `rc:<receipt>:<i>` …) — never `StockMovement.objects.create` directly. Consumption is posted in
   `dispatch_lines`/remake/reroute; a reversal only for items that never started or were replaced.

@@ -22,8 +22,17 @@ Legend: `[x]` done + tested · `[~]` partially done (see note) · `[ ]` not star
       held courses, cashier (F2/F3/F4), drawer, devices/print health
 - [x] Draft + unacknowledged command persisted per branch+operator; retry reuses the same key
 - [ ] 🔌 Demo: two real Android tablets add rounds with WAN unplugged; real 80 mm printer; branch restart keeps sale
-- [ ] Branch restart test scripted (kill server mid-flow, restart, verify one sale) — do with `make smoke` variant
-- [ ] Unattended service startup packaging (systemd / Windows service), reverse proxy + TLS on branch host
+- [x] Branch restart drill `scripts/restart_drill.py` (`make restart-drill`): runs the real supervisor, kills the
+      server right after the round / tender / close commits (fault injection `VIBEORDER_CRASH_AFTER_COMMIT`, DEBUG
+      only), tablet retries with the same key → original result replayed, one round / ticket per station / KOT /
+      tender / receipt; then kills the whole supervisor (power loss) and restarts: sale intact, nothing reprinted.
+      Recorded run on Windows 2026-11-19: `RESTART DRILL OK` (outages 6–12 s incl. restart backoff)
+- [x] Unattended service packaging: `manage.py run_branch` supervisor (waitress `serve` + print worker + sync
+      workers, restart with backoff, logs in `var/logs`, state in `var/run/supervisor.json`, single-instance lock),
+      Windows Scheduled Task installer `deploy/windows/install-service.ps1` (boot start, no sign-in, restart on
+      failure), Linux systemd unit, Caddy TLS reverse proxy config, `branch.env` loader + `branch.env.example`,
+      `manage.py branch_doctor` pre-flight check. Health + alerts show crashing workers / stopped supervisor /
+      failed backups (`test_branch_ops.py`). 🔌 install-service.ps1 not yet run on a real branch PC (needs admin)
 
 ## M2 · Shift operations
 
@@ -77,7 +86,10 @@ Legend: `[x]` done + tested · `[~]` partially done (see note) · `[ ]` not star
 - [x] Health: `GET devices/health` shows backup age/stale/last drill, cloud backlog age, last sync, last error
 - [x] Recipe consumption on first fire (idempotent per item), remake consumes again, never-started cancel is
       compensated, cooked cancel/refund creates no positive stock, packaging at handover (A21, `test_stock.py`)
-- [ ] 🔌 Restore onto a real spare host; unattended service packaging (systemd / Windows service) + TLS proxy
+- [x] Backup scheduling inside the supervisor (every `VIBEORDER_BACKUP_INTERVAL` min, default 15), retention
+      (newest `VIBEORDER_BACKUP_KEEP` + first of each of `VIBEORDER_BACKUP_KEEP_DAILY` days), daily restore drill
+      at `VIBEORDER_DRILL_HOUR` (`test_prune_keeps_newest_and_first_of_each_day`, restart drill backup step)
+- [ ] 🔌 Restore onto a real spare host; install the services + Caddy on the pilot PC
 
 ## M4 · Direct ordering and branches
 
@@ -109,6 +121,32 @@ Legend: `[x]` done + tested · `[~]` partially done (see note) · `[ ]` not star
       cost snapshot on consumption, losses (manager), physical returns, counts with variance, transfers between
       branches (sent → received with cost carried) (`test_receipt_moving_average_count_transfer_and_loss`)
 - [x] Flutter Stock screen (manager): levels, receive, loss, count
+- [x] Stock item master: create/edit items (`POST stock/items`, `stock/items/{id}` with `expected_revision`),
+      base unit locked once stock has moved, per-branch reorder level → status ok / low / out; movement history
+      per item; Stock → Levels tab with Low/out filter (`test_item_create_edit_reorder_level_and_unit_lock`)
+- [x] Recipe management: `GET stock/recipes` (active recipes with cost from moving average, missing-cost flag,
+      menu targets incl. sizes, **missing recipes** for the active menu), `POST stock/recipes` publishes version N+1
+      and retires N (never edited; past consumption keeps its recipe), empty components = retire, stale
+      `expected_version` → 409, version history (`?target_kind=&target_code=&size_code=`); Stock → Recipes tab
+      with editor (`test_recipe_new_version_changes_consumption_and_keeps_history`,
+      `test_missing_recipe_listed_and_retire`, Flutter recipes test)
+- [x] Sold-out switches in the app: `GET availability` (who/why/since) + Stock → Sold out tab (products + options)
+- [x] Alert centre `GET alerts` (computed live, disappears when fixed, filtered by role): stock low/out with the
+      menu items still on sale → one-tap "Mark sold out"; missing recipes; late KOTs (warning, critical after
+      10 min); change/remake tickets not acknowledged after 2 min; KOT/receipt print failures or unknown outcome
+      (→ open ticket, reprint COPY); print jobs stuck in queue (worker down); pending card refunds; stale backup,
+      cloud sync behind, fenced host. Thresholds `VIBEORDER_ALERT_*`. Alerts screen + nav badge (polls 20 s)
+      (`test_alerts_low_and_out_of_stock_offer_sellout`, `test_alerts_late_kot_unacked_change_and_print_problems`,
+      Flutter alerts test)
+- [x] Purchase orders: suppliers, reorder suggestions (on hand + on order ≤ reorder → up to `par_level`, rounded
+      up to purchase units, cost estimate), PO numbers `PO-B1-0001`, draft → sent → part received → received /
+      closed short / cancelled, receive deliveries against the order (each delivery = linked `PurchaseReceipt`,
+      same moving-average path), supplier message text to copy into WhatsApp; Stock → Orders tab
+      (`test_purchasing.py`, Flutter PO test)
+- [x] Count sheets: count many items while service continues — each line snapshots theoretical on-hand when
+      counted, approval (manager / manager PIN) posts `counted − expected` so sales after counting are kept;
+      one open count at a time, variance value per line and total; Stock → Counts tab
+      (`test_count_sheet_while_selling_posts_variance_at_count_time`, Flutter count test)
 - [ ] Marketplace import + settlement; loyalty; real online payment provider (needs merchant contracts)
 - [ ] Automatic sellout from theoretical stock (needs merchant buffer + reconciliation process)
 
@@ -151,6 +189,8 @@ Legend: `[x]` done + tested · `[~]` partially done (see note) · `[ ]` not star
   some ingredients were already on the pizza.
 - Move/merge change tickets notify stations with live items only.
 - Table is released as soon as its check closes (spec allows an explicit release step).
+- Alerts are computed on read (no history, no push/SMS/sound). A per-device "seen" state and an audible KDS
+  alert for late tickets would be the next step.
 - Notifications are polling only (floor 5s, order 6s, KDS 2s, dispatch 5s, tracking 4s). WebSocket/SSE later.
 - Staff session token is kept in memory on the app: a reload/restart asks for the PIN again (drafts survive).
 - ESC/POS TCP transport sends cp437 text; Urdu needs rasterized printing (spec: rasterize when font lacks glyphs).
@@ -159,7 +199,9 @@ Legend: `[x]` done + tested · `[~]` partially done (see note) · `[ ]` not star
 - No API schema/OpenAPI doc yet; add drf-spectacular and diff it per release.
 - Load test (20 rounds/min, p95 < 500 ms append) not run yet.
 - Owner portal and storefront are plain Django templates + JS (no build step); Urdu/RTL storefront later.
-- Backup scheduling (every 15 min) is left to the host scheduler (cron / Task Scheduler running `backup_branch`).
+- PO receiving does not yet print a goods-received note; supplier price lists / last price per supplier are not
+  tracked (cost comes from what was entered on delivery).
+- Count sheets count every active item (API accepts an item list; no UI to pick a subset or a storage area yet).
 
 ## Deviations from spec (record rule, reason, test)
 

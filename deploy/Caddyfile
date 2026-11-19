@@ -1,0 +1,27 @@
+# TLS reverse proxy for the branch host (https://caddyserver.com, single binary for Windows/Linux).
+# Tablets, the cashier PC and the KDS browser reach the branch over HTTPS on the LAN; waitress listens on
+# 127.0.0.1:8000 only. `tls internal` uses Caddy's own local CA: install its root certificate on each tablet once
+# (caddy trust / export from %AppData%\Caddy\pki\authorities\local\root.crt).
+# Replace the site addresses with the branch PC's LAN name and fixed IP.
+
+vibeorder.local, 192.168.1.10 {
+	tls internal
+
+	encode gzip
+	reverse_proxy 127.0.0.1:8000 {
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	# Optional: serve the Flutter web staff app from the same origin (no CORS needed)
+	handle_path /app/* {
+		root * ../app/build/web
+		file_server
+	}
+
+	log {
+		output file ../backend/var/logs/caddy-access.log {
+			roll_size 10mb
+			roll_keep 5
+		}
+	}
+}

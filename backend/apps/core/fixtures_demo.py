@@ -189,7 +189,7 @@ def seed_operations(tenant, branch, b2):
     from apps.cloud.models import CloudBranch
     from apps.core.models import Device
     from apps.fulfillment.models import DeliveryZone
-    from apps.stock.models import Recipe, RecipeComponent, StockItem
+    from apps.stock.models import Recipe, RecipeComponent, StockItem, StockLevel
     from apps.stock.services import post
 
     for br, zones in ((branch, [("gulberg", "Gulberg", 120, 35), ("model-town", "Model Town", 180, 45),
@@ -220,6 +220,9 @@ def seed_operations(tenant, branch, b2):
         for code, name, unit, pu, factor, opening, cost in STOCK_ITEMS:
             post(br, items[code], "receipt", Decimal(opening), "seed:opening", unit_cost=Decimal(cost),
                  reason="Opening stock (demo)")
+            # Demo reorder level: a quarter of the opening stock (kept if a manager already changed it).
+            StockLevel.objects.filter(branch=br, item=items[code], reorder_level__isnull=True).update(
+                reorder_level=Decimal(opening) / 4)
         CloudBranch.objects.get_or_create(branch=br, defaults={"token_hash": Device.hash_token(dev_cloud_token(br))})
 
 

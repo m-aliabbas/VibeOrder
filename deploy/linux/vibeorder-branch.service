@@ -1,0 +1,24 @@
+# systemd unit for a Linux branch host. Install:
+#   sudo cp deploy/linux/vibeorder-branch.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now vibeorder-branch
+# Assumes the repo at /opt/vibeorder and a `vibeorder` system user that owns backend/var and the backup folder.
+[Unit]
+Description=VibeOrder branch services (server, print worker, sync, backups)
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=vibeorder
+WorkingDirectory=/opt/vibeorder/backend
+Environment=VIBEORDER_ENV_FILE=/opt/vibeorder/backend/branch.env
+ExecStartPre=/opt/vibeorder/backend/.venv/bin/python manage.py branch_doctor
+ExecStart=/opt/vibeorder/backend/.venv/bin/python manage.py run_branch
+Restart=always
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target
