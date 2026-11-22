@@ -162,3 +162,11 @@ def count_sheet(request, branch_id, count_id):
 
 enter_counts = _manage_cmd("stock.count_enter", lambda ctx, data, count_id: po.enter_counts(ctx, count_id, data),
                            perm="stock.view")
+
+
+@api_view(["POST"])
+def supplier_payment(request, branch_id, supplier_id):
+    branch_for(request, branch_id)
+    require(request, "supplier.pay")
+    return run_command(request, branch_id, "supplier.payment", {"supplier": str(supplier_id), **request.data},
+                       lambda ctx: po.pay_supplier(ctx, supplier_id, request.data))

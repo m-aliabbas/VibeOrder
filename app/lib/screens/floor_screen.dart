@@ -18,6 +18,7 @@ class FloorScreen extends StatefulWidget {
 
 class _FloorScreenState extends State<FloorScreen> {
   Map<String, dynamic>? floor;
+  List<Map<String, dynamic>> ready = [];
   String? error;
   Timer? timer;
   bool listView = false;
@@ -39,10 +40,18 @@ class _FloorScreenState extends State<FloorScreen> {
 
   Future<void> _load() async {
     try {
-      final r = await context.read<AppState>().api.get('floor');
+      final app = context.read<AppState>();
+      final r = await app.api.get('floor');
+      var pick = <Map<String, dynamic>>[];
+      if (app.can('ticket.serve')) {
+        try {
+          pick = List<Map<String, dynamic>>.from((await app.api.get('pickups')).data['tables']);
+        } on ApiError catch (_) {}
+      }
       if (mounted) {
         setState(() {
           floor = r.data;
+          ready = pick;
           error = null;
         });
       }
@@ -79,6 +88,105 @@ class _FloorScreenState extends State<FloorScreen> {
     }
   }
 
+  Future<void> _serve(Map<String, dynamic> group) async {
+    try {
+      await context.read<AppState>().api.command('pickups/serve', {
+        'item_ids': [for (final i in group['items']) i['id']],
+      });
+      if (mounted) showInfo(context, 'Served at table ${group['table']}');
+    } on ApiError catch (e) {
+      if (mounted) showError(context, e);
+    }
+    await _load();
+  }
+
+  Widget _readyStrip(ThemeData t) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.green.shade50,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.green.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.room_service, color: Colors.green.shade800),
+              const SizedBox(width: 8),
+              Text(
+                'Ready to serve · pick up from the kitchen',
+                style: t.textTheme.titleMedium?.copyWith(color: Colors.green.shade900),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 132,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                for (final g in ready)
+                  Container(
+                    key: ValueKey('ready-${g['table']}'),
+                    width: 260,
+                    margin: const EdgeInsets.only(right: 10),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              g['table'] != null ? 'Table ${g['table']}' : '#${g['token']}',
+                              style: t.textTheme.titleMedium?.copyWith(color: Colors.black87),
+                            ),
+                            const Spacer(),
+                            Text(
+                              '${(g['items'] as List).map((i) => i['waiting_minutes'] as int).fold<int>(0, (a, b) => a > b ? a : b)} min',
+                              style: TextStyle(color: Colors.green.shade900, fontWeight: FontWeight.w700),
+                            ),
+                          ],
+                        ),
+                        Expanded(
+                          child: Text(
+                            [for (final i in g['items']) '${i['quantity']} × ${i['label']}'].join(', '),
+                            style: const TextStyle(color: Colors.black87),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            key: ValueKey('serve-${g['table']}'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.green.shade700,
+                              minimumSize: const Size(64, 40),
+                            ),
+                            onPressed: () => _serve(g),
+                            icon: const Icon(Icons.check),
+                            label: const Text('Served'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _go(String checkId, String title) async {
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -111,6 +219,7 @@ class _FloorScreenState extends State<FloorScreen> {
             leading: const Icon(Icons.wifi_off),
             actions: [TextButton(onPressed: _load, child: const Text('Retry'))],
           ),
+        if (ready.isNotEmpty) _readyStrip(t),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           child: Row(
@@ -199,14 +308,21 @@ class _TableTile extends StatelessWidget {
     final t = Theme.of(context);
     final occ = table['occupied'] == true;
     final chk = table['check'];
-    final bg = occ ? t.colorScheme.primaryContainer : t.colorScheme.surfaceContainerLow;
+    final readyN = occ ? (chk['ready_to_serve'] ?? 0) as int : 0;
+    final bg = occ ? t.colorScheme.primaryContainer : t.colorScheme.surfaceContainerLowest;
     final fg = occ ? t.colorScheme.onPrimaryContainer : t.colorScheme.onSurface;
     return Material(
       color: bg,
-      borderRadius: BorderRadius.circular(16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(
+          color: readyN > 0 ? Colors.green.shade600 : (occ ? Colors.transparent : t.colorScheme.outlineVariant),
+          width: readyN > 0 ? 3 : 1,
+        ),
+      ),
       child: InkWell(
         key: ValueKey('table-${table['label']}'),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.all(12),
@@ -220,6 +336,7 @@ class _TableTile extends StatelessWidget {
                     style: t.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800, color: fg),
                   ),
                   const Spacer(),
+                  if (readyN > 0) StatusChip('$readyN READY', icon: Icons.room_service, color: Colors.green.shade700),
                   if (occ && chk['bill_requested'] == true)
                     const StatusChip('BILL', icon: Icons.receipt_long, color: Colors.deepOrange),
                 ],

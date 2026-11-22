@@ -6,6 +6,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.core.commands import next_sequence
@@ -72,32 +73,8 @@ def wrap(text, width, indent=""):
 
 
 def render_ticket(ticket, width=48):
-    check = ticket.check_ref
-    tz = check.branch.tz
-    lines = [
-        "=" * width,
-        f"{ticket.station.name.upper()}  TICKET {ticket.seq}".center(width),
-        ("** FIRE HELD COURSE **" if ticket.kind == "fire" else f"** {ticket.kind.upper()} **" if ticket.kind != "original" else "").center(width),
-        ticket_header(check),
-        f"Round {ticket.round.number}  Guests {check.guest_count}  By {ticket.round.added_by.display_name}",
-        f"Sent {timezone.localtime(ticket.created_at, tz):%H:%M}   DUE {timezone.localtime(ticket.due_at, tz):%H:%M}",
-        "-" * width,
-    ]
-    if ticket.note:
-        lines += wrap(f">> {ticket.note}", width) + ["-" * width]
-    for item in ticket.items.order_by("line__line_no", "component_index"):
-        if item.change_note and item.change_note != ticket.note:
-            lines += wrap(f">> {item.change_note}", width)
-        prefix = "CANCEL " if item.status == "cancelled" else ""
-        lines += wrap(f"{prefix}{item.quantity} x {item.label}", width)
-        if item.slot_name:
-            lines += wrap(f"[{item.slot_name}]", width, "   ")
-        for d in item.detail:
-            lines += wrap(d, width, "   ")
-        if item.notes:
-            lines += wrap(f"NOTE: {item.notes}", width, "   ")
-    lines += ["-" * width, f"Ticket {ticket.id}"[:width], "=" * width, "", ""]
-    return "\n".join(ln for ln in lines if ln is not None)
+    from .layouts import render_kot
+    return render_kot(ticket, width)
 
 
 def printer_for(branch, purpose, station=None):
@@ -127,42 +104,8 @@ def money(minor, currency="PKR"):
 
 
 def render_bill(check, width=48, title="BILL", receipt_no=None):
-    from apps.orders.services import check_amounts
-
-    tz = check.branch.tz
-    a = check_amounts(check)
-    out = ["=" * width, check.branch.name.center(width), title.center(width)]
-    if receipt_no:
-        out.append(f"Receipt {receipt_no}".center(width))
-    out += [ticket_header(check),
-            f"{timezone.localtime(timezone.now(), tz):%Y-%m-%d %H:%M}  Business day {check.business_date}", "-" * width]
-    for ln in check.lines.filter(status="active").order_by("line_no"):
-        amt = money(ln.total_minor, "")
-        label = f"{ln.quantity} x {ln.name}"
-        if len(label) + len(amt) + 1 > width:
-            out += wrap(label, width)
-            out.append(amt.rjust(width))
-        else:
-            out.append(label + amt.rjust(width - len(label)))
-    out.append("-" * width)
-
-    def row(k, v):
-        out.append(k + money(v, check.branch.currency).rjust(width - len(k)))
-
-    row("Subtotal", a["subtotal_minor"])
-    if a["discount_minor"]:
-        row("Discount", -a["discount_minor"])
-    if a["tax_minor"]:
-        row("Tax", a["tax_minor"])
-    row("TOTAL", a["total_minor"])
-    for t in check.tenders.filter(status="succeeded").order_by("created_at"):
-        row(f"Paid {t.get_method_display()}", t.amount_minor)
-        if t.method == "cash" and t.cash_received_minor:
-            row("  Cash received", t.cash_received_minor)
-            row("  Change", t.change_minor)
-    row("Balance", a["balance_minor"])
-    out += ["=" * width, "Thank you!".center(width), "", ""]
-    return "\n".join(out)
+    from .layouts import render_bill as layout
+    return layout(check, width, title, receipt_no)
 
 
 def enqueue_bill(ctx, check):
@@ -170,7 +113,7 @@ def enqueue_bill(ctx, check):
     if printer is None:
         return None
     return PrintJob.objects.create(branch=ctx.branch, printer=printer, kind="bill", check_ref=check,
-                                   content=render_bill(check, printer.width_chars, "BILL - NOT A RECEIPT"))
+                                   content=render_bill(check, printer.width_chars, "BILL"))
 
 
 def enqueue_receipt(ctx, check):
@@ -178,40 +121,13 @@ def enqueue_receipt(ctx, check):
     if printer is None:
         return None
     return PrintJob.objects.create(branch=ctx.branch, printer=printer, kind="receipt", check_ref=check,
-                                   content=render_bill(check, printer.width_chars, "RECEIPT", check.receipt_no))
+                                   content=render_bill(check, printer.width_chars, "SALES RECEIPT", check.receipt_no or ""))
 
 
 def render_payer_receipt(tender, width=48):
     """Receipt for one payer: only the lines (or parts) this tender paid for (spec 04 split by item)."""
-    check = tender.check_ref
-    tz = check.branch.tz
-    out = ["=" * width, check.branch.name.center(width), "PAYER RECEIPT".center(width),
-           (f"Receipt {check.receipt_no}" if check.receipt_no else f"Check #{check.token}").center(width),
-           ticket_header(check), f"{timezone.localtime(tender.created_at, tz):%Y-%m-%d %H:%M}", "-" * width]
-    for a in tender.allocations.select_related("line").order_by("line__line_no"):
-        ln = a.line
-        label = f"{ln.quantity} x {ln.name}"
-        amt = money(a.amount_minor, "")
-        if a.amount_minor != ln.charge_minor:
-            label += " (part)"
-        if len(label) + len(amt) + 1 > width:
-            out += wrap(label, width)
-            out.append(amt.rjust(width))
-        else:
-            out.append(label + amt.rjust(width - len(label)))
-    out.append("-" * width)
-
-    def row(k, v):
-        out.append(k + money(v, check.branch.currency).rjust(width - len(k)))
-
-    row(f"Paid {tender.get_method_display()}"[:width - 14], tender.amount_minor)
-    if tender.method == "cash" and tender.cash_received_minor:
-        row("  Cash received", tender.cash_received_minor)
-        row("  Change", tender.change_minor)
-    if tender.external_ref:
-        out.append(f"Ref {tender.external_ref}"[:width])
-    out += [f"Payment {tender.pk}"[:width], "=" * width, "Thank you!".center(width), "", ""]
-    return "\n".join(out)
+    from .layouts import render_payer_receipt as layout
+    return layout(tender, width)
 
 
 def enqueue_payer_receipt(ctx, tender):
@@ -231,7 +147,8 @@ def serialize_ticket_item(item):
         "id": str(item.pk), "revision": item.revision, "status": item.status, "quantity": item.quantity,
         "label": item.label, "detail": item.detail, "notes": item.notes, "slot_name": item.slot_name,
         "line_id": str(item.line_id), "ticket": {"id": str(t.pk), "seq": t.seq, "kind": t.kind, "due_at": t.due_at,
-                                                 "created_at": t.created_at, "round": t.round.number},
+                                                 "created_at": t.created_at, "round": t.round.number,
+                                                 "station": t.station.name if t.station_id else ""},
         "check": {"id": str(check.pk), "token": check.token, "service_type": check.service_type,
                   "table": check.table.label if check.table_id else None},
         "started_at": item.started_at, "ready_at": item.ready_at,
@@ -275,7 +192,7 @@ def station_queue(branch, station_id, include_done=False):
     statuses = ["queued", "preparing"] + (["ready"] if include_done else [])
     items = (
         TicketItem.objects.filter(ticket__station=station, status__in=statuses)
-        .select_related("ticket__check_ref__table", "ticket__round", "line")
+        .select_related("ticket__check_ref__table", "ticket__round", "ticket__station", "line")
         .order_by("ticket__due_at", "ticket__seq", "line__line_no", "component_index")
     )
     ready_recent = []
@@ -390,7 +307,8 @@ def job_detail(branch, job_id):
         raise NotFound("Print job not found")
     copies = [serialize_job(c) for c in job.copies.select_related("printer", "ticket__station", "check_ref",
                                                                   "requested_by").order_by("created_at")]
-    return {**serialize_job(job), "content": job.content, "copies": copies}
+    from .escpos import plain
+    return {**serialize_job(job), "content": plain(job.content, job.printer.width_chars), "copies": copies}
 
 
 def reprint(ctx, job_id, data):
@@ -401,10 +319,12 @@ def reprint(ctx, job_id, data):
     if not reason:
         raise DomainError("Give a reason for the reprint", field_errors={"reason": "required"})
     root = original.original or original
-    header = f"*** COPY of job {root.pk} ***\nReprinted by {ctx.staff.display_name}: {reason}\n"
+    header = (f"{{C}}{{W}}*** COPY ***\n{{C}}*** COPY of job {root.pk} ***\n"
+              f"{{C}}Reprinted by {ctx.staff.display_name}: {reason}\n")
+    body = "\n".join(ln for ln in root.content.split("\n") if ln != "{DRAWER}")  # a copy never opens the drawer
     job = PrintJob.objects.create(
         branch=ctx.branch, printer=root.printer, kind=root.kind, ticket=root.ticket, check_ref=root.check_ref,
-        content=header + root.content, original=root, is_copy=True, requested_by=ctx.staff, reason=reason[:200],
+        content=header + body, original=root, is_copy=True, requested_by=ctx.staff, reason=reason[:200],
     )
     ctx.audit("print.reprint", job, None, 1, reason=reason, data={"original": str(root.pk)})
     return serialize_job(job)
@@ -415,13 +335,16 @@ class PrintTransportError(Exception):
 
 
 def send_to_printer(printer: Printer, job: PrintJob) -> str:
+    from . import escpos
+
     if printer.transport == "spool_file":
         queue = printer.address or f"printer-{printer.pk}"
         d = Path(settings.PRINT_SPOOL_DIR) / queue
         d.mkdir(parents=True, exist_ok=True)
         path = d / f"{timezone.now():%Y%m%dT%H%M%S}-{job.pk}.txt"
-        path.write_text(job.content, encoding="utf-8")
+        path.write_text(escpos.plain(job.content, printer.width_chars), encoding="utf-8")
         return str(path)
+    payload = escpos.encode(job.content)
     if printer.transport == "tcp":
         host, _, port = printer.address.partition(":")
         try:
@@ -429,10 +352,13 @@ def send_to_printer(printer: Printer, job: PrintJob) -> str:
         except OSError as exc:
             raise PrintTransportError(str(exc)) from exc
         with sock:
-            # ESC @ init, text, feed and partial cut. Mixed-script rasterization is a pending item.
-            payload = b"\x1b@" + job.content.encode("cp437", errors="replace") + b"\n\n\n\x1dV\x01"
             sock.sendall(payload)
         return f"tcp:{printer.address}"
+    if printer.transport == "system":
+        try:
+            return escpos.send_system(printer.address, payload, f"VibeOrder {job.kind}")
+        except OSError as exc:  # printer missing / cannot be opened: nothing was sent
+            raise PrintTransportError(str(exc)) from exc
     raise PrintTransportError(f"Unknown transport {printer.transport}")
 
 
@@ -448,7 +374,9 @@ def lease_next_job():
     with transaction.atomic():
         job = (
             PrintJob.objects.select_for_update(skip_locked=True)
-            .filter(status__in=["queued", "failed_before_send"])
+            # A job that failed before sending waits out its backoff (lease_until), so one broken printer
+            # never starves the other printers' queues.
+            .filter(Q(status="queued") | Q(status="failed_before_send", lease_until__lte=timezone.now()))
             .order_by("created_at").first()
         )
         if job is None:
@@ -468,7 +396,9 @@ def process_one(send=send_to_printer):
     try:
         ref = send(printer, job)
     except PrintTransportError as exc:
-        PrintJob.objects.filter(pk=job.pk).update(status="failed_before_send", last_error=str(exc)[:300])
+        backoff = min(60, 2 ** min(job.attempts, 6))
+        PrintJob.objects.filter(pk=job.pk).update(status="failed_before_send", last_error=str(exc)[:300],
+                                                  lease_until=timezone.now() + timedelta(seconds=backoff))
         Printer.objects.filter(pk=printer.pk).update(last_error=str(exc)[:300])
         log.warning("print job %s failed before send: %s", job.pk, exc)
         return job.pk
@@ -519,3 +449,52 @@ def device_health(branch):
         "devices": [{"id": str(d.pk), "name": d.name, "kind": d.kind, "last_seen_at": d.last_seen_at,
                      "revoked": d.revoked_at is not None} for d in Device.objects.filter(branch=branch).order_by("name")],
     }
+
+
+# ---------------------------------------------------------------- waiter pick-up (ready → served)
+
+def pickups(branch):
+    """Dine-in dishes the kitchen marked ready: the waiter picks them up and serves them."""
+    items = (TicketItem.objects.filter(ticket__branch=branch, status="ready", line__status="active",
+                                       ticket__check_ref__service_type="dine_in", ticket__check_ref__status="open")
+             .select_related("ticket__check_ref__table", "ticket__check_ref__opened_by", "ticket__station", "line")
+             .order_by("ready_at"))
+    by_check = {}
+    now = timezone.now()
+    for it in items:
+        c = it.ticket.check_ref
+        g = by_check.setdefault(c.pk, {"check_id": str(c.pk), "token": c.token,
+                                       "table": c.table.label if c.table_id else None,
+                                       "waiter": c.opened_by.display_name, "items": []})
+        g["items"].append({"id": str(it.pk), "label": it.label, "quantity": it.quantity, "revision": it.revision,
+                           "station": it.ticket.station.name, "ready_at": it.ready_at,
+                           "waiting_minutes": int((now - it.ready_at).total_seconds() // 60) if it.ready_at else 0,
+                           "detail": it.detail, "notes": it.notes})
+    return {"tables": list(by_check.values()), "count": items.count(), "server_time": now}
+
+
+def serve_items(ctx, data):
+    ids = data.get("item_ids") or []
+    if not ids:
+        raise DomainError("Choose the dishes you are serving", field_errors={"item_ids": "required"})
+    items = list(TicketItem.objects.select_for_update().filter(ticket__branch=ctx.branch, pk__in=ids)
+                 .select_related("ticket"))
+    if len(items) != len(set(map(str, ids))):
+        raise NotFound("Dish not found")
+    now = timezone.now()
+    served = []
+    for it in items:
+        if it.status == "served":
+            continue
+        if it.status != "ready":
+            raise Conflict(f"{it.label} is not ready yet", code="not_ready", current_revision=it.revision)
+        prev = it.revision
+        it.status = "served"
+        it.revision += 1
+        it.save(update_fields=["status", "revision", "updated_at"])
+        ctx.audit("ticket_item.served", it, prev, it.revision)
+        served.append(it)
+    if served:
+        ctx.emit("production.served", served[0].ticket.check_ref, {
+            "check_id": served[0].ticket.check_ref_id, "items": [i.pk for i in served], "at": now})
+    return 200, {"served": [str(i.pk) for i in served]}

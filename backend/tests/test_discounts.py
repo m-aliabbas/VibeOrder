@@ -3,7 +3,7 @@ from apps.orders.models import CheckDiscount
 
 from .conftest import MIXED_PIZZA, add_round, open_table
 
-APPROVAL = {"username": "zara", "pin": "9999"}
+APPROVAL = {"username": "zara", "password": "zara123"}
 COLA = {"client_line_id": "c", "product": "cola-500", "quantity": 1}  # Rs 120
 
 

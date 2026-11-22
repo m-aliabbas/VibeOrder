@@ -71,6 +71,21 @@ Legend: `[x]` done + tested · `[~]` partially done (see note) · `[ ]` not star
 - [x] Golden close (spec 04): float 5,000 + cash 8,300 + rider remitted 2,000 − refund 300 − paid-out 500 =
       **14,500**, counted 14,450 → **−50**, card 4,000 excluded, rider outstanding **420** (`test_golden_close_full`)
 
+## Simple service flow (2026-11-19)
+
+- [x] General restaurant menu next to pizza: Karahi, BBQ, Rice, Naan & Roti, Raita/Salad/Lassi; new stations
+      `kitchen` (hot kitchen) and `tandoor`; recipes with real quantities (e.g. mutton karahi half = 500 g mutton,
+      full = 1 kg) and reorder levels; dev DBs get it as a published menu update (`ensure_general_menu`)
+      (`test_recipe_consumes_mutton`)
+- [x] Waiter pick-up: kitchen marks ready → waiter's floor shows "Ready to serve" per table + ready badge →
+      `POST pickups/serve` marks served (`ticket.serve` for waiter/cashier) (`test_waiter_sees_ready_dishes_and_serves_them`)
+- [x] Customer invoice: `GET checks/{id}/invoice` → signed link `/invoice/<token>` (Tax invoice when paid,
+      Pro-forma before), A4 or 80 mm, print / save PDF; cashier **Invoice / Pro-forma** button
+      (`test_invoice_link_renders_paid_invoice`)
+- [x] Redesign: warm light theme, photo menu grid (`/media/menu/<code>.jpg`, gradient icon fallback), new sign-in
+      with avatars and PIN dots, storefront thumbnails
+- [x] 24 dish photos generated with Codex image_gen into `backend/media/menu/` (640 px JPEG, ~4 MB total)
+
 ## M3 · Delivery and recoverability
 
 - [x] Packing checklist across stations (all live components incl. bought-in drinks, held lines shown as missing);
@@ -149,6 +164,61 @@ Legend: `[x]` done + tested · `[~]` partially done (see note) · `[ ]` not star
       (`test_count_sheet_while_selling_posts_variance_at_count_time`, Flutter count test)
 - [ ] Marketplace import + settlement; loyalty; real online payment provider (needs merchant contracts)
 - [ ] Automatic sellout from theoretical stock (needs merchant buffer + reconciliation process)
+
+## M6 · Simpler sign in, kitchen screen, dashboard (2026-11-22)
+
+- [x] Everyone signs in with **username + password** (`POST /api/v1/login`); PINs and the PIN pad are gone.
+      Lockout after `VIBEORDER_LOGIN_MAX_ATTEMPTS` wrong passwords. Manager approvals use username + password.
+- [x] **No device pairing.** The app/KDS registers itself at first sign in and keeps a random `device_key`;
+      same key → same device record. Managers can still block a lost device (Devices → Block), which signs
+      everyone out of it and refuses that key. `VIBEORDER_BRANCH` picks the branch for people at several
+      branches; otherwise the app asks once (`409 choose_branch`). Session survives an app restart.
+- [x] Staff accounts (manager): `GET/POST staff`, `POST staff/{id}` (name, roles, switch off, reset password),
+      `POST me/password` (signs out the person's other devices). Flutter Staff screen + "Change my password".
+      (`test_accounts.py`, Flutter staff test)
+- [x] Kitchen display redesign: one card per ticket, live timer with green/amber/red urgency and progress bar,
+      tap a line to start / mark ready, "Start all" / "Done" per ticket, All-stations view, sound on new orders,
+      full screen, Ready rail. Sign in with username + password.
+- [x] Manager dashboard with charts (`GET dashboard?days=1|7|14|30|90`, fl_chart): KPI tiles with change vs
+      previous period, sales per day / by hour, busy hours, channel mix, payments, best sellers, staff, kitchen
+      time. Totals reconcile with the sales report (`test_dashboard.py`, Flutter dashboard test).
+      Demo data: `make history` (30 days of past orders, DEBUG only).
+
+## M7 · Printing and ledgers (2026-11-22)
+
+- [x] 80 mm thermal layouts (`apps/kitchen/layouts.py`): KOT (station, big table/type, order + KOT no., waiter,
+      sent/due, bold double-height items, halves in bold, notes), bill ("THIS IS NOT A RECEIPT"), sales receipt
+      (business name, branch, address, phone, NTN, receipt no., cashier, items with qty × rate and build details,
+      discounts by name, tax, TOTAL, cash received / change, footer), payer receipt, refund slip with signature
+      line, test page. Line markup `{B}{W}{H}{C}{R}{CUT}{DRAWER}` → ESC/POS (`escpos.py`); job log, previews and
+      spool files show plain text. Cash receipts open the drawer; a COPY never does.
+- [x] USB printers on the counter PC: transport `system` sends raw ESC/POS to the installed Windows printer by name
+      (pywin32; CUPS `lp -o raw` on macOS/Linux). Printer missing → `failed_before_send` (safe retry).
+- [x] Print queue fairness: a job that failed before sending waits a backoff (2 s … 60 s) so one broken printer
+      no longer starves the other printers (found by the new USB test).
+- [x] Printer setup (manager): `GET/POST printers`, `POST printers/{id}`, `POST printers/{id}/test`, installed
+      printers list, receipt header/footer (`POST receipt-settings`: address, phone, NTN, last line). Flutter
+      Devices → Printer setup.
+- [x] Supplier payments (`POST stock/suppliers/{id}/payments`: cash from drawer → paid-out movement in the same
+      transaction, bank, wallet, cheque); supplier balance owed in `GET stock/suppliers`.
+- [x] A4 ledgers (`GET ledgers/{cash|sales|supplier|customer|stock}`, signed 24 h print link `/print/ledger/…`):
+      cash (per shift, running balance, close/variance), sales (every closed bill + totals by payment), supplier
+      (opening, goods received, payments, balance owed), customer (orders vs payments, drill into one customer),
+      stock (opening/in/out/closing + value, drill into one item). Flutter Ledgers screen with date range,
+      drill-down, Pay supplier, Print A4. (`test_printing_ledgers.py`, Flutter ledgers + printer tests)
+- [ ] 🔌 Print on the real USB thermal printer at the branch (install the Windows driver, then Printer setup → Test)
+- [ ] Urdu on thermal paper needs a raster (image) print path; ESC/POS text mode is Latin only.
+
+## M8 · Look and feel (2026-11-22)
+
+- [x] Generated photography (Codex image_gen, no text/faces): login hero, splash oven, dashboard spice banner, KDS
+      kitchen. Originals in `app/assets/images/raw/`, bundled JPEGs in `app/assets/images/` (see its README).
+- [x] Animated splash (brand mark scales in, name fades up) while the app starts / restores the session;
+      `VibeOrderApp(splash: Duration.zero)` in widget tests.
+- [x] `PhotoBackdrop` (photo + ember glow + gradient overlay, gradient fallback if a file is missing), `GlassPanel`
+      (frosted card), `BrandMark`, `HeroBanner` in `lib/widgets/visuals.dart`. Login: photo brand panel with feature
+      chips on wide screens, full-screen photo + frosted card on phones. Dashboard: greeting banner. KDS sign in:
+      kitchen photo + frosted card (`backend/media/ui/kitchen_bg.jpg`).
 
 ## Acceptance catalog status
 

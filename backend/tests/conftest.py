@@ -13,32 +13,23 @@ def demo(db, tmp_path, settings):
 
 
 class Staff:
-    """API client acting as one operator on one paired device."""
+    """API client acting as one operator signed in on their own device."""
 
-    def __init__(self, branch, username, pin, kind="tablet"):
-        from datetime import timedelta
-
-        from django.utils import timezone
-
-        from apps.core.models import PairingCode
-
+    def __init__(self, branch, username, password, kind="tablet"):
         self.branch = branch
         self.client = APIClient()
-        pc = PairingCode.objects.create(branch=branch, code=PairingCode.new_code(), kind=kind,
-                                        expires_at=timezone.now() + timedelta(minutes=5))
-        r = self.client.post("/api/v1/pair", {"code": pc.code, "name": f"{username}-device"}, format="json")
+        r = self.client.post("/api/v1/login", {"username": username, "password": password, "branch": branch.code,
+                                               "device_name": f"{username}-device", "device_kind": kind},
+                             format="json")
         assert r.status_code == 201, r.content
-        self.device_token = r.json()["device_token"]
-        r = self.client.post(self.url("sessions"), {"username": username, "pin": pin}, format="json",
-                             HTTP_X_DEVICE_TOKEN=self.device_token)
-        assert r.status_code == 201, r.content
+        self.device_key = r.json()["device_key"]
         self.session = r.json()["session_token"]
 
     def url(self, path):
         return f"/api/v1/branches/{self.branch.pk}/{path}"
 
     def headers(self, key=None):
-        h = {"HTTP_X_DEVICE_TOKEN": self.device_token, "HTTP_AUTHORIZATION": f"Bearer {self.session}"}
+        h = {"HTTP_AUTHORIZATION": f"Bearer {self.session}"}
         if key is not False:
             h["HTTP_IDEMPOTENCY_KEY"] = str(key or uuid.uuid4())
         return h
@@ -52,34 +43,34 @@ class Staff:
 
 @pytest.fixture
 def staff_factory(demo):
-    def make(username, pin, kind="tablet"):
-        return Staff(demo["branch"], username, pin, kind)
+    def make(username, password, kind="tablet"):
+        return Staff(demo["branch"], username, password, kind)
     return make
 
 
 @pytest.fixture
 def waiter(staff_factory):
-    return staff_factory("bilal", "1111")
+    return staff_factory("bilal", "bilal123")
 
 
 @pytest.fixture
 def waiter2(staff_factory):
-    return staff_factory("sana", "2222")
+    return staff_factory("sana", "sana123")
 
 
 @pytest.fixture
 def cashier(staff_factory):
-    return staff_factory("hamza", "3333", "cashier")
+    return staff_factory("hamza", "hamza123", "cashier")
 
 
 @pytest.fixture
 def cook(staff_factory):
-    return staff_factory("usman", "4444", "kds")
+    return staff_factory("usman", "usman123", "kds")
 
 
 @pytest.fixture
 def manager(staff_factory):
-    return staff_factory("zara", "9999")
+    return staff_factory("zara", "zara123")
 
 
 MIXED_PIZZA = {"client_line_id": "L-phone-1", "product": "mixed-pizza", "variant": "large", "quantity": 1,

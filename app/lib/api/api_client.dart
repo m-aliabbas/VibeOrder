@@ -31,11 +31,10 @@ class ApiResult {
 
 /// Thin REST client. REST is authoritative; never guesses whether a write succeeded.
 class ApiClient {
-  ApiClient({required this.baseUrl, this.deviceToken, this.sessionToken, this.branchId, http.Client? client})
+  ApiClient({required this.baseUrl, this.sessionToken, this.branchId, http.Client? client})
     : _http = client ?? http.Client();
 
   String baseUrl;
-  String? deviceToken;
   String? sessionToken;
   String? branchId;
   final http.Client _http;
@@ -56,7 +55,6 @@ class ApiClient {
   Map<String, String> _headers({String? key}) => {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
-    'X-Device-Token': ?deviceToken,
     if (sessionToken != null) 'Authorization': 'Bearer $sessionToken',
     'Idempotency-Key': ?key,
   };
@@ -77,7 +75,7 @@ class ApiClient {
     );
   }
 
-  /// Non-idempotent auxiliary POST (pairing, login, quotes).
+  /// Non-idempotent auxiliary POST (login, quotes).
   Future<ApiResult> post(String path, Map<String, dynamic> body) =>
       _send(() => _http.post(_uri(path), headers: _headers(), body: jsonEncode(body)));
 

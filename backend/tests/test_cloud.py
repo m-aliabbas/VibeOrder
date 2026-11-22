@@ -180,7 +180,7 @@ def test_storefront_pauses_on_stale_heartbeat_and_price_change(demo, settings):
 
 def test_a20_release_at_b1_b2_keeps_menu_and_local_sellout(demo):
     b1, b2 = demo["branch"], demo["branch2"]
-    owner = owner_client("ayesha", "8888")
+    owner = owner_client("ayesha", "ayesha123")
     rel = owner.get("/api/v1/owner/releases").json()["releases"][0]
     r = owner.post("/api/v1/owner/releases", {"base_release_id": rel["id"], "name": "Summer",
                                               "price_changes": [{"product": "cola-500", "variant": "regular",
@@ -192,7 +192,7 @@ def test_a20_release_at_b1_b2_keeps_menu_and_local_sellout(demo):
     r = owner.post(f"/api/v1/owner/releases/{new['id']}/publish", {"branch_ids": [str(b1.pk)]}, format="json")
     assert r.status_code == 200 and r.json()["activations"] == [{"branch": "B1", "release": 2, "changed": True}]
     # B2 manager sells out fries locally
-    nadia = Staff(b2, "nadia", "7777")
+    nadia = Staff(b2, "nadia", "nadia123")
     assert nadia.post("availability", {"target_kind": "product", "target_code": "fries", "available": False,
                                        "reason": "no potatoes"}).status_code == 200
     for code in ("B1", "B2"):
@@ -221,7 +221,7 @@ def test_a20_release_at_b1_b2_keeps_menu_and_local_sellout(demo):
 
 def owner_client(username, pin):
     c = APIClient()
-    r = c.post("/api/v1/owner/sessions", {"tenant": "demo", "username": username, "pin": pin}, format="json")
+    r = c.post("/api/v1/owner/sessions", {"tenant": "demo", "username": username, "password": pin}, format="json")
     assert r.status_code == 201, r.content
     c.credentials(HTTP_AUTHORIZATION=f"Owner {r.json()['token']}")
     return c
@@ -230,13 +230,13 @@ def owner_client(username, pin):
 def test_a17_scope_reports_exports_and_sync_revocation(demo, cashier, manager):
     b1, b2 = demo["branch"], demo["branch2"]
     closed_sale(cashier, [dict(COLA, client_line_id="c")])
-    owner = owner_client("ayesha", "8888")
+    owner = owner_client("ayesha", "ayesha123")
     r = owner.get("/api/v1/owner/reports/sales", {"export": "csv"})
     text = r.content.decode()
     assert r.status_code == 200 and "# branches: B1, B2" in text and "# currency: PKR" in text
     assert "net_merchandise_minor" in text
     # B2 manager sees B2 only; B1 is invisible (404), not forbidden
-    nadia = owner_client("nadia", "7777")
+    nadia = owner_client("nadia", "nadia123")
     assert [b["code"] for b in nadia.get("/api/v1/owner/overview").json()["branches"]] == ["B2"]
     assert nadia.get("/api/v1/owner/reports/sales", {"branches": str(b1.pk)}).status_code == 404
     assert nadia.get("/api/v1/owner/reports/sales", {"branches": "B1"}).status_code == 404
@@ -330,7 +330,7 @@ def test_a24_business_day_cutoff(demo, cashier, manager, _):
         cid2 = closed_sale(cashier, [dict(COLA, client_line_id="c")])
         d2 = cashier.get(f"checks/{cid2}").json()
         r = cashier.post(f"tenders/{d1['tenders'][0]['id']}/refunds",
-                         {"amount_minor": 12000, "reason": "flat", "approval": {"username": "zara", "pin": "9999"}})
+                         {"amount_minor": 12000, "reason": "flat", "approval": {"username": "zara", "password": "zara123"}})
         assert r.status_code == 201
     from datetime import date
     bd1, bd2 = date.fromisoformat(str(d1["business_date"])), date.fromisoformat(str(d2["business_date"]))

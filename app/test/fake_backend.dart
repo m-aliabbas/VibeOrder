@@ -154,6 +154,24 @@ class FakeBackend {
     'currency': 'PKR',
   };
 
+  final logins = <Map<String, dynamic>>[];
+  final ledgerQueries = <Map<String, String>>[];
+  final supplierPayments = <Map<String, dynamic>>[];
+  final printerWrites = <Map<String, dynamic>>[];
+  final printers = <Map<String, dynamic>>[];
+  final staffWrites = <Map<String, dynamic>>[];
+  final staffAccounts = <Map<String, dynamic>>[
+    {
+      'id': 's1',
+      'username': 'bilal',
+      'display_name': 'Bilal (Waiter)',
+      'roles': ['waiter'],
+      'is_active': true,
+      'last_login_at': null,
+      'locked': false,
+    },
+  ];
+
   late final client = MockClient((req) async {
     requests.add(req);
     final path = req.url.path.replaceFirst(RegExp(r'^/api/v1/branches/[^/]+/'), '');
@@ -162,22 +180,95 @@ class FakeBackend {
     if (path == 'bootstrap') return json(bootstrap);
     if (path == 'menu') return json(menu);
     if (path == 'floor') return json(floor);
-    if (path == 'staff-directory') {
+    if (path == 'dashboard') {
       return json({
+        'branch': {'id': 'B1', 'name': 'Demo Pizzeria', 'currency': 'PKR'},
+        'range': {'from': '2026-11-16', 'to': '2026-11-22', 'days': int.parse(req.url.queryParameters['days'] ?? '7')},
+        'kpis': {
+          'net_minor': 12345600,
+          'net_change_pct': 12.5,
+          'orders': 321,
+          'orders_change_pct': -3.0,
+          'avg_minor': 384600,
+          'avg_change_pct': 8.0,
+          'discounts_minor': 0,
+          'refunds_minor': 0,
+          'open_checks': 4,
+          'open_value_minor': 560000,
+          'in_kitchen': 7,
+          'late_tickets': 2,
+          'kitchen_median_min': 14.2,
+          'kitchen_p90_min': 23.0,
+        },
+        'sales_by_day': [
+          for (var i = 0; i < 7; i++)
+            {'date': '2026-11-${16 + i}', 'net_minor': 1500000 + i * 100000, 'orders': 40 + i},
+        ],
+        'by_hour': [
+          for (var h = 0; h < 24; h++) {'hour': h, 'orders': h >= 12 && h <= 22 ? h : 0, 'net_minor': 0},
+        ],
+        'channels': [
+          {'code': 'dine_in', 'name': 'Dine-in', 'orders': 200, 'net_minor': 8000000},
+          {'code': 'delivery', 'name': 'Delivery', 'orders': 121, 'net_minor': 4345600},
+        ],
+        'payments': [
+          {'method': 'cash', 'name': 'Cash', 'amount_minor': 9000000, 'count': 250},
+          {'method': 'external_card', 'name': 'Card', 'amount_minor': 3345600, 'count': 71},
+        ],
+        'top_items': [
+          {'name': 'Chicken Tikka', 'quantity': 120, 'net_minor': 4000000},
+          {'name': 'Fries', 'quantity': 90, 'net_minor': 900000},
+        ],
         'staff': [
-          {
-            'id': 's1',
-            'username': 'bilal',
-            'display_name': 'Bilal (Waiter)',
-            'roles': ['waiter'],
-          },
+          {'name': 'Bilal (Waiter)', 'orders': 150, 'net_minor': 6000000},
         ],
       });
     }
-    if (path == 'sessions') {
+    if (path == 'staff' && req.method == 'GET') {
+      return json({
+        'staff': staffAccounts,
+        'roles': [
+          {'code': 'waiter', 'name': 'Waiter'},
+        ],
+      });
+    }
+    if (path == 'staff' && req.method == 'POST') {
+      final body = Map<String, dynamic>.from(jsonDecode(req.body));
+      staffWrites.add(body);
+      if ((body['password'] as String).length < 6) {
+        return json({
+          'code': 'validation_error',
+          'message': 'Password must be at least 6 characters',
+          'field_errors': {'password': 'too_short'},
+        }, 422);
+      }
+      final row = {
+        'id': 'n${staffAccounts.length}',
+        'username': body['username'],
+        'display_name': body['display_name'],
+        'roles': body['roles'],
+        'is_active': true,
+        'last_login_at': null,
+        'locked': false,
+      };
+      staffAccounts.add(row);
+      return json(row, 201);
+    }
+    if (req.url.path == '/api/v1/login') {
       final body = jsonDecode(req.body);
-      if (body['pin'] != '1111') return json({'code': 'invalid_credentials', 'message': 'Unknown staff or PIN'}, 401);
-      return json({'session_token': 'sess', 'staff_id': 's1'}, 201);
+      logins.add(Map<String, dynamic>.from(body));
+      if (body['username'] != 'bilal' || body['password'] != 'bilal123') {
+        return json({'code': 'invalid_credentials', 'message': 'Wrong username or password'}, 401);
+      }
+      return json({
+        'session_token': 'sess',
+        'staff_id': 's1',
+        'display_name': 'Bilal (Waiter)',
+        'branch_id': 'B1',
+        'branch_name': 'Demo Pizzeria',
+        'device_key': 'devkey',
+        'roles': ['waiter'],
+      }, 201);
     }
     if (path == 'quotes') {
       final items = (jsonDecode(req.body)['items'] as List);
@@ -423,10 +514,68 @@ class FakeBackend {
         'items': [cheeseItem],
       });
     }
+    if (path.startsWith('ledgers/')) {
+      ledgerQueries.add({'kind': path.substring(8), ...req.url.queryParameters});
+      final supplier = req.url.queryParameters['supplier'];
+      return json({
+        'kind': path.substring(8),
+        'title': 'Supplier ledger',
+        'from': req.url.queryParameters['from'],
+        'to': req.url.queryParameters['to'],
+        'summary': [
+          {'label': 'Total owed', 'value': 1000000, 'money': true},
+        ],
+        'sections': [
+          {
+            'title': supplier == null ? 'All suppliers' : 'Dairy Co',
+            'subtitle': '',
+            'columns': [
+              {'key': 'type', 'label': 'Entry', 'money': false, 'align': 'left'},
+              {'key': 'balance', 'label': 'Balance owed', 'money': true, 'align': 'right'},
+            ],
+            'rows': [
+              {'id': 'S1', 'type': 'Goods received', 'supplier': 'Dairy Co', 'balance': 2600000},
+              {'type': 'Payment (Bank transfer)', 'balance': 1000000},
+            ],
+            'totals': {'type': 'Closing balance', 'balance': 1000000},
+          },
+        ],
+        'print_path': '/print/ledger/TOKEN',
+      });
+    }
+    if (path.startsWith('stock/suppliers/') && path.endsWith('/payments')) {
+      supplierPayments.add(Map<String, dynamic>.from(jsonDecode(req.body)));
+      return json({'id': 'P1', 'balance_minor': 1000000}, 201);
+    }
+    if (path == 'printers' && req.method == 'GET') {
+      return json({
+        'printers': printers,
+        'installed': ['EPSON TM-T88V', 'Microsoft Print to PDF'],
+        'stations': [
+          {'id': 'ST1', 'name': 'Pizza oven'},
+        ],
+        'transports': [],
+        'receipt': {
+          'business_name': 'Demo Pizzeria',
+          'branch_name': 'Gulberg',
+          'address': '',
+          'phone': '',
+          'tax_number': '',
+          'receipt_footer': '',
+        },
+      });
+    }
+    if (path == 'printers' && req.method == 'POST') {
+      final body = Map<String, dynamic>.from(jsonDecode(req.body));
+      printerWrites.add(body);
+      final row = {...body, 'id': 'PR${printers.length}', 'station': null, 'last_error': '', 'last_ok_at': null};
+      printers.add(row);
+      return json(row, 201);
+    }
     if (path == 'stock/suppliers') {
       return json({
         'suppliers': [
-          {'id': 'S1', 'name': 'Dairy Co', 'phone': '0300 1234567', 'note': ''},
+          {'id': 'S1', 'name': 'Dairy Co', 'phone': '0300 1234567', 'note': '', 'balance_minor': 2600000},
         ],
       });
     }

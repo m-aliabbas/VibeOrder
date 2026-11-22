@@ -46,6 +46,9 @@ class Branch(Stamped):
     online_paused = models.BooleanField(default=False)
     pickup_minutes = models.PositiveIntegerField(default=20)
     address = models.CharField(max_length=200, blank=True)
+    phone = models.CharField(max_length=40, blank=True)
+    tax_number = models.CharField(max_length=40, blank=True, help_text="NTN / STRN printed on receipts")
+    receipt_footer = models.CharField(max_length=200, blank=True, help_text="Last line of every receipt")
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["tenant", "code"], name="uniq_branch_code")]
@@ -90,11 +93,11 @@ class Role(models.TextChoices):
 
 ROLE_PERMISSIONS = {
     "waiter": {"check.open", "check.append", "check.view", "floor.view", "quote", "menu.view", "check.request_bill",
-               "check.amend", "check.move"},
+               "check.amend", "check.move", "ticket.serve"},
     "cashier": {"check.open", "check.append", "check.view", "floor.view", "quote", "menu.view",
                 "tender.take", "check.close", "receipt.print", "shift.view", "drawer.open", "print.reprint", "check.request_bill",
                 "check.amend", "check.move", "discount.apply", "customer.lookup", "delivery.manage", "pack.verify",
-                "station.view", "rider.view", "ticket.transition"},
+                "station.view", "rider.view", "ticket.transition", "ticket.serve"},
     "cook": {"station.view", "ticket.transition", "ticket.acknowledge", "menu.view", "print.reprint"},
     "packer": {"station.view", "ticket.transition", "ticket.acknowledge", "menu.view", "pack.verify", "print.reprint",
                "check.view", "delivery.manage", "rider.view"},
@@ -108,7 +111,7 @@ class Staff(Stamped):
     tenant = models.ForeignKey(Tenant, on_delete=models.PROTECT, related_name="staff")
     display_name = models.CharField(max_length=80)
     username = models.CharField(max_length=40)
-    pin_hash = models.CharField(max_length=200)
+    password_hash = models.CharField(max_length=200)
     is_active = models.BooleanField(default=True)
     failed_attempts = models.PositiveIntegerField(default=0)
     locked_until = models.DateTimeField(null=True, blank=True)
@@ -116,11 +119,11 @@ class Staff(Stamped):
     class Meta:
         constraints = [models.UniqueConstraint(fields=["tenant", "username"], name="uniq_staff_username")]
 
-    def set_pin(self, pin: str):
-        self.pin_hash = make_password(pin)
+    def set_password(self, password: str):
+        self.password_hash = make_password(password)
 
-    def check_pin(self, pin: str) -> bool:
-        return check_password(pin, self.pin_hash)
+    def check_password(self, password: str) -> bool:
+        return bool(password) and check_password(password, self.password_hash)
 
     def __str__(self):
         return self.display_name
@@ -152,19 +155,6 @@ class Device(Stamped):
     def hash_token(raw: str) -> str:
         import hashlib
         return hashlib.sha256(raw.encode()).hexdigest()
-
-
-class PairingCode(Stamped):
-    branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name="pairing_codes")
-    code = models.CharField(max_length=12)
-    kind = models.CharField(max_length=20, default="tablet")
-    expires_at = models.DateTimeField()
-    used_at = models.DateTimeField(null=True, blank=True)
-    created_by = models.ForeignKey(Staff, null=True, blank=True, on_delete=models.SET_NULL)
-
-    @staticmethod
-    def new_code():
-        return f"{secrets.randbelow(10**6):06d}"
 
 
 class StaffSession(Stamped):

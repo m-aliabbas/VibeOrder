@@ -8,7 +8,7 @@ from apps.stock.services import consume_item
 
 from .conftest import MIXED_PIZZA, add_round, open_table
 
-APPROVAL = {"username": "zara", "pin": "9999"}
+APPROVAL = {"username": "zara", "password": "zara123"}
 
 
 def on_hand(branch, code):
@@ -95,7 +95,7 @@ def test_receipt_moving_average_count_transfer_and_loss(demo, manager, staff_fac
     assert r.status_code == 200
     assert on_hand(b2, "cheese") == 20000 + 1000 and on_hand(b, "cheese") == 29400 - 1000
     # Cashier cannot see stock
-    cashier = staff_factory("hamza", "3333", "cashier")
+    cashier = staff_factory("hamza", "hamza123", "cashier")
     assert cashier.get("stock").status_code == 403
     levels = manager.get("stock").json()["items"]
     assert any(i["code"] == "cheese" for i in levels)
@@ -104,4 +104,4 @@ def test_receipt_moving_average_count_transfer_and_loss(demo, manager, staff_fac
 
 def staff_factory_b2(b2):
     from .conftest import Staff
-    return Staff(b2, "nadia", "7777")
+    return Staff(b2, "nadia", "nadia123")

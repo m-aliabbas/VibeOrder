@@ -107,26 +107,21 @@ def test_a17_foreign_branch_and_revoked_device(demo, waiter, manager):
     assert r.status_code == 404
     chk = open_table(waiter, 6)
     from apps.core.models import Device
-    dev = Device.objects.get(token_hash=Device.hash_token(waiter.device_token))
+    dev = Device.objects.get(token_hash=Device.hash_token(waiter.device_key))
     r = manager.post(f"devices/{dev.pk}/revoke", key=False)
     assert r.status_code == 200
     assert waiter.get(f"checks/{chk['check_id']}").status_code == 401
 
 
-def test_pin_lockout(demo, settings):
-    settings.PIN_MAX_ATTEMPTS = 3
+def test_login_lockout(demo, settings):
+    settings.LOGIN_MAX_ATTEMPTS = 3
     from rest_framework.test import APIClient
-    from apps.core.models import PairingCode
-    from django.utils import timezone
-    from datetime import timedelta
-    pc = PairingCode.objects.create(branch=demo["branch"], code="123456", expires_at=timezone.now() + timedelta(minutes=1))
     c = APIClient()
-    tok = c.post("/api/v1/pair", {"code": "123456"}, format="json").json()["device_token"]
-    assert c.post("/api/v1/pair", {"code": "123456"}, format="json").status_code == 400, "single use"
-    url = f"/api/v1/branches/{demo['branch'].pk}/sessions"
     for _ in range(3):
-        assert c.post(url, {"username": "bilal", "pin": "0000"}, format="json", HTTP_X_DEVICE_TOKEN=tok).status_code == 401
-    assert c.post(url, {"username": "bilal", "pin": "1111"}, format="json", HTTP_X_DEVICE_TOKEN=tok).status_code == 429
+        assert c.post("/api/v1/login", {"username": "bilal", "password": "wrong-pw"}, format="json").status_code == 401
+    r = c.post("/api/v1/login", {"username": "bilal", "password": "bilal123"}, format="json")
+    assert r.status_code == 429 and r.json()["code"] == "locked"
+    assert c.post("/api/v1/login", {"username": "nobody", "password": "x"}, format="json").status_code == 401
 
 
 def test_a18_counting_drawer_rejects_postings_and_variance_needs_manager(demo, waiter, cashier, staff_factory):
@@ -146,7 +141,7 @@ def test_a18_counting_drawer_rejects_postings_and_variance_needs_manager(demo, w
     r = cashier.post(f"shifts/{s['id']}/close", {"expected_revision": shift_rev, "reason": "short"})
     assert r.status_code == 403 and r.json()["code"] == "approval_required"
     r = cashier.post(f"shifts/{s['id']}/close", {"expected_revision": shift_rev, "reason": "short",
-                                                 "approval": {"username": "zara", "pin": "9999"}})
+                                                 "approval": {"username": "zara", "password": "zara123"}})
     assert r.status_code == 200 and r.json()["approved_by"] == "Zara (Manager)"
     r = cashier.post(f"shifts/{s['id']}/count", {"counted_minor": 1, "expected_revision": r.json()["revision"]})
     assert r.status_code == 409  # closed is immutable
@@ -192,6 +187,9 @@ def test_print_known_failure_retries_and_stale_lease_recovered(demo, waiter, set
 
     process_one(send=refuse)
     assert PrintJob.objects.get().status == "failed_before_send"
+    assert process_one() is None, "waits out its backoff instead of hammering a broken printer"
+    from django.utils import timezone as tz
+    PrintJob.objects.update(lease_until=tz.now())  # backoff elapsed
     process_one()
     assert PrintJob.objects.get().status == "handed_to_spooler"
     # simulate worker died after leasing
@@ -229,7 +227,7 @@ def test_a01_two_waiters_open_same_table(tmp_path, settings):
     from apps.core.fixtures_demo import seed
     settings.PRINT_SPOOL_DIR = tmp_path
     d = seed()
-    a, b = Staff(d["branch"], "bilal", "1111"), Staff(d["branch"], "sana", "2222")
+    a, b = Staff(d["branch"], "bilal", "bilal123"), Staff(d["branch"], "sana", "sana123")
     payload = {"service_type": "dine_in", "table_id": table_id(6), "guest_count": 2}
     r1, r2 = _run_parallel([lambda: a.post("checks", payload), lambda: b.post("checks", payload)])
     codes = sorted([r1.status_code, r2.status_code])
@@ -244,7 +242,7 @@ def test_a02_concurrent_rounds_on_same_check(tmp_path, settings):
     from apps.core.fixtures_demo import seed
     settings.PRINT_SPOOL_DIR = tmp_path
     d = seed()
-    a, b = Staff(d["branch"], "bilal", "1111"), Staff(d["branch"], "sana", "2222")
+    a, b = Staff(d["branch"], "bilal", "bilal123"), Staff(d["branch"], "sana", "sana123")
     chk = open_table(a, 6)
     qa = a.post("quotes", {"items": [MIXED_PIZZA]}, key=False).json()
     item_b = {"client_line_id": "B1", "product": "fries", "variant": "regular"}
@@ -265,7 +263,7 @@ def test_concurrent_identical_retry_single_write(tmp_path, settings):
     from apps.core.fixtures_demo import seed
     settings.PRINT_SPOOL_DIR = tmp_path
     d = seed()
-    a = Staff(d["branch"], "bilal", "1111")
+    a = Staff(d["branch"], "bilal", "bilal123")
     chk = open_table(a, 6)
     q = a.post("quotes", {"items": [MIXED_PIZZA]}, key=False).json()
     key = uuid.uuid4()

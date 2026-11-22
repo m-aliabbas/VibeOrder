@@ -1,3 +1,4 @@
+from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
@@ -102,3 +103,49 @@ def payer_receipt(request, branch_id, tender_id):
         return serialize_job(job)
 
     return run_command(request, branch_id, "receipt.payer", {"tender": str(tender_id)}, handler)
+
+
+INVOICE_SALT = "vibeorder.invoice"
+
+
+@api_view(["GET"])
+def invoice_link(request, branch_id, check_id):
+    """Signed, shareable link to a printable customer invoice (no staff session needed to open it)."""
+    from django.core import signing
+
+    from apps.orders.models import Check
+    branch = branch_for(request, branch_id)
+    require(request, "check.view")
+    if not Check.objects.filter(branch=branch, pk=check_id).exists():
+        raise NotFound("Check not found")
+    token = signing.dumps({"c": str(check_id)}, salt=INVOICE_SALT, compress=True)
+    return Response({"url": request.build_absolute_uri(f"/invoice/{token}"), "path": f"/invoice/{token}"})
+
+
+def invoice_page(request, token):
+    from django.core import signing
+    from django.http import Http404
+    from django.shortcuts import render
+
+    from apps.orders.models import Check
+    from apps.orders.services import check_amounts
+    try:
+        data = signing.loads(token, salt=INVOICE_SALT, max_age=60 * 60 * 24 * 90)
+    except signing.BadSignature:
+        raise Http404("Invoice link invalid or expired")
+    c = Check.objects.filter(pk=data["c"]).select_related("branch__tenant", "table", "opened_by", "closed_by").first()
+    if c is None:
+        raise Http404("Invoice not found")
+    a = check_amounts(c)
+    lines = [ln for ln in c.lines.filter(status="active").order_by("line_no")]
+    tenders = list(c.tenders.filter(status="succeeded").order_by("created_at"))
+    refunds = list(c.refunds.filter(status="succeeded").order_by("created_at"))
+    discounts = list(c.discounts.filter(status="active").select_related("promotion"))
+    d = c.deliveries.order_by("-attempt").first()
+    tz = c.branch.tz
+    return render(request, "invoice.html", {
+        "c": c, "a": a, "lines": lines, "tenders": tenders, "refunds": refunds, "discounts": discounts,
+        "delivery": d, "branch": c.branch, "tenant": c.branch.tenant,
+        "issued": timezone.localtime(c.closed_at or timezone.now(), tz),
+        "final": c.status == "closed", "currency": c.branch.currency,
+    })

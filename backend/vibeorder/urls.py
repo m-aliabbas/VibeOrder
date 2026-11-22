@@ -1,5 +1,7 @@
+from django.conf import settings
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.static import serve as static_serve
 
 from apps.cash import views as cash
 from apps.cloud import views as cloud
@@ -12,11 +14,11 @@ from apps.kitchen import views as kitchen
 from apps.orders import views as orders
 
 branch = [
-    path("staff-directory", core.staff_directory),
-    path("sessions", core.login),
     path("sessions/logout", core.logout),
+    path("me/password", core.change_my_password),
+    path("staff", core.staff_accounts),
+    path("staff/<uuid:staff_id>", core.staff_account),
     path("bootstrap", core.bootstrap),
-    path("pairing-codes", core.create_pairing_code),
     path("devices/<uuid:device_id>/revoke", core.revoke_device),
     path("devices/health", kitchen.devices_health),
     path("recovery", core.recovery),
@@ -42,7 +44,14 @@ branch = [
     path("ticket-items/<uuid:item_id>/transitions", kitchen.transition),
     path("tickets/<uuid:ticket_id>/acknowledge", kitchen.acknowledge),
     path("print-jobs", kitchen.print_jobs),
+    path("printers", kitchen.printers),
+    path("printers/<uuid:printer_id>", kitchen.printer_detail),
+    path("printers/<uuid:printer_id>/test", kitchen.printer_test),
+    path("receipt-settings", kitchen.receipt_settings),
     path("print-jobs/<uuid:job_id>", kitchen.print_job_detail),
+    path("pickups", kitchen.pickups),
+    path("pickups/serve", kitchen.serve),
+    path("checks/<uuid:check_id>/invoice", cash.invoice_link),
     path("print-jobs/<uuid:job_id>/reprints", kitchen.reprint),
     path("shifts", cash.shifts),
     path("shifts/<uuid:shift_id>", cash.shift_detail),
@@ -74,6 +83,7 @@ branch = [
     path("stock/items/<uuid:item_id>", stock.item_update),
     path("stock/recipes", stock.recipes),
     path("stock/suppliers", stock.suppliers),
+    path("stock/suppliers/<uuid:supplier_id>/payments", stock.supplier_payment),
     path("stock/suggestions", stock.suggestions),
     path("stock/purchase-orders", stock.purchase_orders),
     path("stock/purchase-orders/<uuid:po_id>", stock.purchase_order),
@@ -82,6 +92,8 @@ branch = [
     path("stock/count-sheets/<uuid:count_id>", stock.count_sheet),
     path("stock/count-sheets/<uuid:count_id>/lines", stock.enter_counts),
     path("alerts", stock.alerts),
+    path("dashboard", reports.dashboard),
+    path("ledgers/<str:kind>", reports.ledger),
     path("reports/<str:name>", reports.report),
 ]
 
@@ -110,11 +122,14 @@ urlpatterns = [
     path("healthz", core.healthz),
     path("readyz", core.readyz),
     path("kds/", kitchen.kds_page),
-    path("api/v1/pair", core.pair_device),
+    path("api/v1/login", core.login),
     path("api/v1/", include(cloud_api)),
     path("s/<slug:slug>/", cloud.storefront_page),
     path("s/<slug:slug>/<str:code>/", cloud.storefront_page),
     path("t/<str:token>", cloud.track_page),
     path("owner/", cloud.owner_page),
+    path("invoice/<str:token>", cash.invoice_page),
+    path("print/ledger/<str:token>", reports.ledger_print),
+    re_path(r"^media/(?P<path>.*)$", static_serve, {"document_root": settings.MEDIA_ROOT}),
     path("api/v1/branches/<uuid:branch_id>/", include(branch)),
 ]

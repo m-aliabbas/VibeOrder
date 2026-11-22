@@ -5,237 +5,387 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>VibeOrder Kitchen</title>
 <style>
-  :root { --bg:#14110f; --panel:#1f1a17; --line:#3a312b; --ink:#f5efe8; --muted:#b3a597; --accent:#ff7a1a;
-          --ok:#3fbf6f; --warn:#ffb020; --late:#ff4d4d; --info:#5aa9ff; }
+  :root {
+    --bg:#0e0f11; --panel:#17191c; --panel2:#1f2226; --line:#2c3036; --ink:#f3f4f6; --muted:#9aa1ab;
+    --accent:#ff7a1a; --ok:#22c55e; --ok-ink:#052e14; --warn:#f59e0b; --late:#ef4444; --info:#38bdf8;
+  }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink); font:18px/1.35 system-ui, -apple-system, "Segoe UI", "Noto Nastaliq Urdu", sans-serif; }
-  header { display:flex; gap:16px; align-items:center; padding:12px 20px; background:var(--panel); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:2; }
-  header h1 { font-size:22px; margin:0; letter-spacing:.02em; }
-  header .grow { flex:1; }
-  .pill { padding:6px 12px; border-radius:999px; font-weight:600; font-size:15px; border:1px solid var(--line); }
-  .pill.ok { color:var(--ok); border-color:var(--ok); }
-  .pill.bad { color:var(--late); border-color:var(--late); }
-  button { font:inherit; min-height:56px; min-width:56px; padding:10px 18px; border-radius:12px; border:1px solid var(--line); background:#2b2420; color:var(--ink); cursor:pointer; }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#1b0f05; font-weight:700; }
-  button.ready { background:var(--ok); border-color:var(--ok); color:#06210f; font-weight:700; }
-  button:disabled { opacity:.5; }
-  main { padding:16px 20px; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:16px; }
-  .card { background:var(--panel); border:2px solid var(--line); border-radius:16px; padding:14px 16px; display:flex; flex-direction:column; gap:8px; }
-  .card.preparing { border-color:var(--info); }
-  .changes { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:16px; margin-bottom:18px; }
-  .change { background:#3a2410; border:3px solid var(--warn); border-radius:16px; padding:14px 16px; display:flex; flex-direction:column; gap:8px; }
-  .change .top { flex-wrap:wrap; row-gap:4px; }
-  .change .what { font-size:20px; font-weight:700; color:var(--warn); }
+  [hidden] { display:none !important; }
+  html, body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:17px/1.35 system-ui, -apple-system, "Segoe UI", "Noto Nastaliq Urdu", sans-serif; }
+  button { font:inherit; color:inherit; cursor:pointer; border:1px solid var(--line); background:var(--panel2); border-radius:12px; min-height:48px; padding:8px 16px; }
+  button:disabled { opacity:.45; cursor:default; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#1b0f05; font-weight:800; }
+
+  /* ---------- top bar ---------- */
+  header { display:flex; align-items:center; gap:10px; padding:10px 16px; background:var(--panel); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; flex-wrap:wrap; }
+  .brand { font-weight:900; font-size:20px; letter-spacing:.01em; }
+  .brand span { color:var(--accent); }
+  .stations { display:flex; gap:6px; flex-wrap:wrap; }
+  .stations button { min-height:40px; padding:6px 14px; border-radius:999px; font-weight:700; font-size:15px; }
+  .stations button.on { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+  .grow { flex:1; }
+  .stats { display:flex; gap:8px; }
+  .stat { display:flex; flex-direction:column; align-items:center; min-width:64px; padding:4px 10px; border-radius:10px; background:var(--panel2); border:1px solid var(--line); }
+  .stat b { font-size:22px; line-height:1.1; font-variant-numeric:tabular-nums; }
+  .stat small { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); }
+  .stat.late b { color:var(--late); }
+  .clock { font-size:22px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .conn { width:12px; height:12px; border-radius:50%; background:var(--ok); box-shadow:0 0 0 3px rgba(34,197,94,.2); }
+  .conn.bad { background:var(--late); box-shadow:0 0 0 3px rgba(239,68,68,.25); animation:pulse 1s infinite; }
+  .iconbtn { min-width:48px; padding:6px 10px; font-size:20px; }
+  .offline { background:var(--late); color:#fff; text-align:center; font-weight:800; padding:6px; }
+
+  /* ---------- tickets ---------- */
+  main { padding:14px 16px 90px; }
+  .board { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:14px; align-items:start; }
+  .ticket { background:var(--panel); border:1px solid var(--line); border-radius:16px; overflow:hidden; display:flex; flex-direction:column; }
+  .ticket .head { padding:10px 14px; display:flex; align-items:center; gap:10px; background:#1d3b2a; }
+  .ticket.warn .head { background:#4a3507; }
+  .ticket.late { border-color:var(--late); box-shadow:0 0 0 2px rgba(239,68,68,.35); }
+  .ticket.late .head { background:#5a1414; }
+  .ticket .token { font-size:28px; font-weight:900; line-height:1; }
+  .ticket .where { font-weight:800; font-size:16px; padding:3px 10px; border-radius:8px; background:rgba(255,255,255,.12); }
+  .ticket .timer { margin-left:auto; font-size:24px; font-weight:900; font-variant-numeric:tabular-nums; }
+  .ticket.late .timer { color:#ffd0d0; animation:pulse 1.2s infinite; }
+  .ticket .meta { display:flex; gap:10px; padding:6px 14px; color:var(--muted); font-size:14px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .ticket .meta .kind { color:#2a1a00; background:var(--warn); font-weight:900; padding:0 8px; border-radius:6px; }
+  .progress { height:5px; background:var(--panel2); }
+  .progress i { display:block; height:100%; background:var(--ok); transition:width .5s; }
+  .ticket.warn .progress i { background:var(--warn); }
+  .ticket.late .progress i { background:var(--late); }
+  .lines { list-style:none; margin:0; padding:4px 0; }
+  .line { display:flex; gap:12px; padding:10px 14px; cursor:pointer; border-bottom:1px dashed var(--line); user-select:none; }
+  .line:last-child { border-bottom:none; }
+  .line:active { background:var(--panel2); }
+  .line .qty { font-size:22px; font-weight:900; min-width:34px; color:var(--accent); }
+  .line .body { flex:1; min-width:0; }
+  .line .label { font-size:20px; font-weight:800; }
+  .line ul { margin:4px 0 0; padding-left:18px; color:#d7dbe0; font-size:17px; }
+  .line ul li.side { font-weight:800; color:#fff; }
+  .line .note { margin-top:6px; background:#3b2a12; color:#ffd59a; padding:4px 8px; border-radius:8px; font-weight:800; display:inline-block; }
+  .line .chg { margin-top:6px; color:var(--warn); font-weight:800; }
+  .line .slot { color:var(--muted); font-size:14px; }
+  .line .state { align-self:center; font-size:12px; font-weight:900; letter-spacing:.06em; padding:4px 8px; border-radius:6px; border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
+  .line.preparing .state { color:var(--info); border-color:var(--info); }
+  .line.preparing .label::before { content:"▶ "; color:var(--info); }
+  .line.busy { opacity:.5; pointer-events:none; }
+  .ticket .foot { display:flex; gap:8px; padding:10px 14px; border-top:1px solid var(--line); margin-top:auto; }
+  .ticket .foot button { flex:1; font-weight:800; }
+  .ticket .foot .bump { background:var(--ok); border-color:var(--ok); color:var(--ok-ink); font-size:18px; }
+
+  /* change / remake notices */
+  .changes { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:14px; margin-bottom:14px; }
+  .change { background:#2e1f06; border:3px solid var(--warn); border-radius:16px; padding:12px 14px; display:flex; flex-direction:column; gap:8px; animation:flash 1.5s 3; }
+  .change .top { display:flex; justify-content:space-between; gap:8px; align-items:center; flex-wrap:wrap; }
+  .change .token { font-size:24px; font-weight:900; }
+  .change .what { font-size:20px; font-weight:800; color:var(--warn); }
+  .change ul { margin:0; padding-left:18px; }
   .change li.cancelled { text-decoration:line-through; color:var(--late); }
-  .chg { color:var(--warn); font-weight:600; }
-  .card.late { border-color:var(--late); }
-  .card .top { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
-  .token { font-size:30px; font-weight:800; }
-  .where { font-size:20px; font-weight:700; color:var(--accent); }
-  .times { display:flex; gap:14px; font-size:16px; color:var(--muted); }
-  .times b { color:var(--ink); }
-  .times .late b { color:var(--late); }
-  .label { font-size:24px; font-weight:800; }
-  .detail { margin:0; padding-left:18px; font-size:20px; }
-  .detail li.side { font-weight:700; }
-  .note { background:#3b2a12; color:#ffd59a; padding:6px 10px; border-radius:8px; font-weight:700; }
-  .kind { font-size:14px; font-weight:800; padding:2px 8px; border-radius:6px; background:var(--warn); color:#2a1a00; }
-  .status { font-weight:700; font-size:15px; text-transform:uppercase; letter-spacing:.06em; }
-  .actions { display:flex; gap:10px; margin-top:auto; }
-  .actions button { flex:1; }
-  .center { max-width:460px; margin:60px auto; background:var(--panel); padding:28px; border-radius:16px; border:1px solid var(--line); display:flex; flex-direction:column; gap:14px; }
-  input, select { font:inherit; font-size:24px; padding:12px; border-radius:10px; border:1px solid var(--line); background:#0f0d0c; color:var(--ink); }
-  .error { color:var(--late); font-weight:600; min-height:1.3em; }
-  .empty { color:var(--muted); font-size:24px; text-align:center; padding:80px 0; }
-  .ready-strip { margin-top:24px; color:var(--muted); font-size:16px; }
-  .ready-strip span { display:inline-block; margin:4px 8px 0 0; padding:4px 10px; border:1px solid var(--ok); color:var(--ok); border-radius:8px; }
+  .change .kind { color:#2a1a00; background:var(--warn); font-weight:900; padding:2px 8px; border-radius:6px; font-size:13px; }
+
+  /* bottom ready rail */
+  .rail { position:fixed; bottom:0; left:0; right:0; background:var(--panel); border-top:1px solid var(--line); padding:8px 16px; display:flex; gap:8px; align-items:center; overflow-x:auto; white-space:nowrap; }
+  .rail .lbl { color:var(--muted); font-size:13px; text-transform:uppercase; letter-spacing:.08em; font-weight:800; }
+  .rail span.r { display:inline-flex; gap:6px; padding:6px 10px; border-radius:10px; border:1px solid var(--ok); color:var(--ok); font-weight:700; }
+
+  .empty { text-align:center; padding:100px 0; color:var(--muted); }
+  .empty b { display:block; font-size:30px; color:var(--ink); margin-bottom:6px; }
+
+  /* sign in */
+  body.signin { background:
+      linear-gradient(180deg, rgba(14,15,17,.55), rgba(14,15,17,.92)),
+      radial-gradient(circle at 10% 10%, rgba(255,122,26,.35), transparent 55%),
+      url('/media/ui/kitchen_bg.jpg') center / cover no-repeat fixed, var(--bg); min-height:100vh; }
+  body.signin .center { background:rgba(23,25,28,.72); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
+      border-color:rgba(255,255,255,.14); box-shadow:0 30px 80px rgba(0,0,0,.5); }
+  .mark { width:56px; height:56px; border-radius:50%; display:grid; place-items:center; font-size:28px;
+      background:linear-gradient(135deg,#ff8a4c,#c2410c); box-shadow:0 0 34px rgba(255,122,26,.55); }
+  .center { max-width:420px; margin:8vh auto; background:var(--panel); padding:28px; border-radius:18px; border:1px solid var(--line); display:flex; flex-direction:column; gap:14px; }
+  .center h2 { margin:0; font-size:26px; }
+  label { display:flex; flex-direction:column; gap:6px; color:var(--muted); font-size:14px; font-weight:700; }
+  input { font:inherit; font-size:20px; padding:12px 14px; border-radius:12px; border:1px solid var(--line); background:#0a0b0c; color:var(--ink); }
+  input:focus { outline:2px solid var(--accent); border-color:transparent; }
+  .error { color:var(--late); font-weight:700; min-height:1.3em; }
   .muted { color:var(--muted); }
+  .pick { display:grid; gap:10px; }
+  .pick button { min-height:64px; font-size:20px; font-weight:800; text-align:left; padding:12px 18px; }
+
+  @keyframes pulse { 50% { opacity:.55; } }
+  @keyframes flash { 50% { background:#5a3b06; } }
 </style>
 </head>
 <body>
-<header>
-  <h1>VibeOrder Kitchen</h1>
-  <span id="station" class="muted"></span>
+<header id="bar" hidden>
+  <div class="brand">Vibe<span>Order</span> Kitchen</div>
+  <div class="stations" id="stations"></div>
   <span class="grow"></span>
-  <span id="clock" class="muted"></span>
-  <span id="conn" class="pill">…</span>
-  <button id="switch" hidden>Switch</button>
+  <div class="stats" id="stats"></div>
+  <div class="clock" id="clock"></div>
+  <div class="conn" id="conn" title="Connection"></div>
+  <button class="iconbtn" id="sound" title="Sound on new orders">🔔</button>
+  <button class="iconbtn" id="full" title="Full screen">⛶</button>
+  <button class="iconbtn" id="out" title="Sign out">⎋</button>
 </header>
+<div class="offline" id="offline" hidden>Connection lost: showing the last orders received</div>
 <main id="app"></main>
+<div class="rail" id="rail" hidden></div>
 <script>
 (() => {
   const S = {
     get(k) { try { return localStorage.getItem('vo.kds.' + k); } catch { return null; } },
     set(k, v) { try { v == null ? localStorage.removeItem('vo.kds.' + k) : localStorage.setItem('vo.kds.' + k, v); } catch {} },
   };
-  const app = document.getElementById('app');
-  const conn = document.getElementById('conn');
-  let state = { branch: S.get('branch'), device: S.get('device'), session: S.get('session'), station: S.get('station'),
-                stations: [], busy: new Set(), lastOk: 0, timer: null };
+  const $ = id => document.getElementById(id);
+  const app = $('app');
+  // Thresholds: amber once 75% of the promised time has gone, red when the ticket is past due.
+  const WARN_RATIO = 0.75;
+  let st = {
+    branch: S.get('branch'), session: S.get('session'), deviceKey: S.get('device_key'),
+    station: S.get('station') || 'all', stations: [], name: S.get('name') || '',
+    queue: null, offset: 0, busy: new Set(), seen: null, sound: S.get('sound') !== 'off', timer: null, failures: 0,
+  };
 
-  function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-  function uuid() { return crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random()*16|0; return (c=='x'?r:(r&3|8)).toString(16); }); }
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const uuid = () => crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random()*16|0; return (c=='x'?r:(r&3|8)).toString(16); });
+  const now = () => Date.now() + st.offset;
+  // Age of a ticket: m:ss under an hour, then 1h 05m, then days (forgotten tickets should not look like a clock).
+  const mmss = ms => {
+    const s = Math.max(0, Math.floor(ms / 1000)), m = Math.floor(s / 60);
+    if (m < 60) return `${m}:${String(s % 60).padStart(2, '0')}`;
+    if (m < 1440) return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+    return `${Math.floor(m / 1440)}d ${Math.floor((m % 1440) / 60)}h`;
+  };
+  const where = c => c.table ? 'Table ' + esc(c.table) : esc((c.service_type || '').replace('_', ' ')).toUpperCase();
+
   async function api(path, opts = {}) {
-    const headers = { 'Content-Type': 'application/json', 'X-Device-Token': state.device || '' };
-    if (state.session) headers.Authorization = 'Bearer ' + state.session;
+    const headers = { 'Content-Type': 'application/json' };
+    if (st.session) headers.Authorization = 'Bearer ' + st.session;
     if (opts.key) headers['Idempotency-Key'] = opts.key;
-    const url = path.startsWith('/') ? path : `/api/v1/branches/${state.branch}/${path}`;
+    const url = path.startsWith('/') ? path : `/api/v1/branches/${st.branch}/${path}`;
     const res = await fetch(url, { method: opts.method || 'GET', headers, body: opts.body ? JSON.stringify(opts.body) : undefined });
     const data = await res.json().catch(() => ({}));
-    if (res.status === 401) { state.session = null; S.set('session', null); render(); }
+    if (res.status === 401 && st.session) { signOutLocal(); }
     return { ok: res.ok, status: res.status, data };
   }
-  function setConn(ok) {
-    conn.textContent = ok ? 'Branch connected' : 'CONNECTION LOST – showing last data';
-    conn.className = 'pill ' + (ok ? 'ok' : 'bad');
+
+  function signOutLocal() {
+    st.session = null; S.set('session', null); st.queue = null; st.stations = []; render();
   }
-  function mins(ms) { const m = Math.round(ms / 60000); return m <= 0 ? 'now' : m + ' min'; }
-  function hhmm(iso) { return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
 
   function render() {
-    clearInterval(state.timer);
-    document.getElementById('switch').hidden = !state.session;
-    if (!state.device) return renderPair();
-    if (!state.session) return renderLogin();
-    return renderQueue();
+    clearInterval(st.timer);
+    document.body.classList.toggle('signin', !st.session);
+    $('bar').hidden = !st.session;
+    $('rail').hidden = true;
+    if (!st.session) return renderLogin();
+    renderBoard();
   }
 
-  function renderPair() {
-    app.innerHTML = `<form class="center" id="f"><h2>Pair this kitchen screen</h2>
-      <p class="muted">Ask a manager for a pairing code.</p>
-      <input name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="6-digit code" required>
-      <div class="error" id="err"></div><button class="primary">Pair screen</button></form>`;
-    document.getElementById('f').onsubmit = async e => {
-      e.preventDefault();
-      const r = await api('/api/v1/pair', { method: 'POST', body: { code: e.target.code.value.trim(), name: 'Kitchen display' } });
-      if (!r.ok) return document.getElementById('err').textContent = r.data.message || 'Pairing failed';
-      state.device = r.data.device_token; state.branch = r.data.branch_id;
-      S.set('device', state.device); S.set('branch', state.branch); render();
-    };
-  }
-
-  async function renderLogin() {
-    app.innerHTML = `<div class="center"><p class="muted">Loading staff…</p></div>`;
-    const r = await api('staff-directory');
-    if (!r.ok) { app.innerHTML = `<div class="center"><div class="error">${esc(r.data.message || 'Cannot reach branch server')}</div><button id="re">Pair again</button></div>`;
-      document.getElementById('re').onclick = () => { S.set('device', null); state.device = null; render(); }; return; }
-    const cooks = r.data.staff.filter(s => s.roles.some(x => ['cook', 'packer', 'manager'].includes(x)));
-    app.innerHTML = `<form class="center" id="f"><h2>Kitchen sign in</h2>
-      <select name="u">${cooks.map(s => `<option value="${esc(s.username)}">${esc(s.display_name)}</option>`).join('')}</select>
-      <input name="pin" type="password" inputmode="numeric" placeholder="PIN" required>
-      <div class="error" id="err"></div><button class="primary">Sign in</button></form>`;
-    document.getElementById('f').onsubmit = async e => {
-      e.preventDefault();
-      const res = await api('sessions', { method: 'POST', body: { username: e.target.u.value, pin: e.target.pin.value } });
-      if (!res.ok) return document.getElementById('err').textContent = res.data.message || 'Sign in failed';
-      state.session = res.data.session_token; S.set('session', state.session); render();
-    };
-  }
-
-  async function renderQueue() {
-    if (!state.stations.length) {
-      const b = await api('bootstrap');
-      if (!b.ok) return;
-      state.stations = b.data.stations;
-      if (!state.stations.find(s => s.id === state.station)) state.station = null;
-    }
-    if (!state.station) {
-      app.innerHTML = `<div class="center"><h2>Choose station</h2>${state.stations.map(s =>
-        `<button data-id="${s.id}">${esc(s.name)}</button>`).join('')}</div>`;
-      app.querySelectorAll('button[data-id]').forEach(b => b.onclick = () => { state.station = b.dataset.id; S.set('station', state.station); render(); });
+  // ---------------------------------------------------------------- sign in
+  function renderLogin(branches) {
+    if (branches) {
+      app.innerHTML = `<div class="center"><h2>Which branch?</h2><div class="pick">${branches.map(b =>
+        `<button data-b="${esc(b.code)}">${esc(b.name)}</button>`).join('')}</div></div>`;
+      app.querySelectorAll('[data-b]').forEach(b => b.onclick = () => doLogin(st._u, st._p, b.dataset.b));
       return;
     }
-    const st = state.stations.find(s => s.id === state.station);
-    document.getElementById('station').textContent = st ? '· ' + st.name : '';
+    app.innerHTML = `<form class="center" id="f" autocomplete="on"><div class="mark">🍕</div><h2>Kitchen sign in</h2>
+      <p class="muted" style="margin:0">Use your own username and password.</p>
+      <label>Username<input name="u" autocomplete="username" autocapitalize="none" required value="${esc(S.get('last_user') || '')}"></label>
+      <label>Password<input name="p" type="password" autocomplete="current-password" required></label>
+      <div class="error" id="err"></div><button class="primary">Sign in</button></form>`;
+    const f = $('f');
+    (f.u.value ? f.p : f.u).focus();
+    f.onsubmit = e => { e.preventDefault(); doLogin(f.u.value.trim(), f.p.value); };
+  }
+
+  async function doLogin(u, p, branch) {
+    const body = { username: u, password: p, device_name: 'Kitchen screen', device_kind: 'kds', device_key: st.deviceKey };
+    if (branch) body.branch = branch;
+    let r;
+    try { r = await api('/api/v1/login', { method: 'POST', body }); }
+    catch { const e = $('err'); if (e) e.textContent = 'Cannot reach the branch server'; return; }
+    if (r.status === 409 && r.data.code === 'choose_branch') { st._u = u; st._p = p; return renderLogin(r.data.branches); }
+    if (!r.ok) { const e = $('err'); if (e) e.textContent = r.data.message || 'Sign in failed'; else renderLogin(); return; }
+    st._u = st._p = null;
+    st.session = r.data.session_token; st.branch = r.data.branch_id; st.deviceKey = r.data.device_key; st.name = r.data.display_name;
+    S.set('session', st.session); S.set('branch', st.branch); S.set('device_key', st.deviceKey); S.set('last_user', u); S.set('name', st.name);
+    st.seen = null;
+    render();
+  }
+
+  // ---------------------------------------------------------------- board
+  async function renderBoard() {
+    if (!st.stations.length) {
+      const b = await api('bootstrap');
+      if (!b.ok) return;
+      st.stations = b.data.stations.filter(s => !s.is_packing).concat(b.data.stations.filter(s => s.is_packing));
+      if (st.station !== 'all' && !st.stations.find(s => s.id === st.station)) st.station = 'all';
+    }
+    drawStations();
+    app.innerHTML = `<div class="empty"><b>Loading orders…</b></div>`;
     await poll();
-    state.timer = setInterval(poll, 2000);
+    st.timer = setInterval(poll, 2000);
+  }
+
+  function drawStations() {
+    const opts = [{ id: 'all', name: 'All stations' }, ...st.stations];
+    $('stations').innerHTML = opts.map(s => `<button data-s="${s.id}" class="${s.id === st.station ? 'on' : ''}">${esc(s.name)}</button>`).join('');
+    $('stations').querySelectorAll('[data-s]').forEach(b => b.onclick = () => {
+      st.station = b.dataset.s; S.set('station', st.station); st.seen = null; drawStations(); poll();
+    });
   }
 
   async function poll() {
+    const ids = st.station === 'all' ? st.stations.filter(s => !s.is_packing).map(s => s.id) : [st.station];
     try {
-      const r = await api(`stations/${state.station}/queue`);
-      if (!r.ok) return setConn(false);
-      state.lastOk = Date.now(); setConn(true); draw(r.data);
-    } catch { setConn(false); }
+      const res = await Promise.all(ids.map(id => api(`stations/${id}/queue`)));
+      if (res.some(r => !r.ok)) throw new Error('bad');
+      const merged = { items: [], changes: [], recently_ready: [], server_time: res[0]?.data.server_time };
+      res.forEach(r => { merged.items.push(...r.data.items); merged.changes.push(...r.data.changes); merged.recently_ready.push(...r.data.recently_ready); });
+      if (merged.server_time) st.offset = new Date(merged.server_time).getTime() - Date.now();
+      st.queue = merged; st.failures = 0; setConn(true);
+      notifyNew(merged);
+      draw();
+    } catch { if (++st.failures >= 2) setConn(false); }
   }
 
-  function changesStrip(q) {
-    if (!q.changes || !q.changes.length) return '';
-    return `<section class="changes">${q.changes.map(t => {
-      const where = t.check.table ? 'Table ' + esc(t.check.table) : esc(t.check.service_type.replace('_', ' ')).toUpperCase();
-      return `<article class="change"><div class="top"><span class="token">#${esc(t.check.token)} · ${where}</span><span class="kind">${esc(t.kind.toUpperCase())} · Tkt ${t.seq}</span></div>
-        <div class="what">${esc(t.note)}</div>
-        ${t.items.length ? `<ul class="detail">${t.items.map(i => `<li class="${i.status === 'cancelled' ? 'cancelled' : ''}">${i.quantity} × ${esc(i.label)}${i.change_note && i.change_note !== t.note ? ` — ${esc(i.change_note)}` : ''}</li>`).join('')}</ul>` : ''}
-        <div class="actions"><button class="primary" data-ack="${t.id}">✓ Acknowledge</button></div></article>`; }).join('')}</section>`;
-  }
+  function setConn(ok) { $('conn').className = 'conn' + (ok ? '' : ' bad'); $('offline').hidden = ok; }
 
-  function draw(q) {
-    const now = new Date(q.server_time).getTime();
-    if (!q.items.length) {
-      app.innerHTML = changesStrip(q) + `<div class="empty">No tickets waiting</div>` + readyStrip(q);
-      bindAck();
-      return;
+  function groupTickets(items) {
+    const map = new Map();
+    for (const it of items) {
+      let t = map.get(it.ticket.id);
+      if (!t) { t = { ...it.ticket, check: it.check, items: [] }; map.set(it.ticket.id, t); }
+      t.items.push(it);
     }
-    app.innerHTML = changesStrip(q) + `<div class="grid">${q.items.map(it => {
-      const due = new Date(it.ticket.due_at).getTime(), sent = new Date(it.ticket.created_at).getTime();
-      const late = now > due;
-      const where = it.check.table ? 'Table ' + esc(it.check.table) : esc(it.check.service_type.replace('_', ' ')).toUpperCase();
-      const kind = it.ticket.kind !== 'original' ? `<span class="kind">${esc(it.ticket.kind.toUpperCase())}</span>` : '';
-      return `<article class="card ${it.status} ${late ? 'late' : ''}">
-        <div class="top"><span class="token">#${esc(it.check.token)}</span><span class="where">${where}</span></div>
-        <div class="times"><span>Age <b>${mins(now - sent)}</b></span><span class="${late ? 'late' : ''}">Due <b>${hhmm(it.ticket.due_at)}</b>${late ? ' ⚠ LATE' : ''}</span><span>Tkt ${it.ticket.seq} · R${it.ticket.round}</span></div>
-        <div>${kind} <span class="status">${it.status === 'preparing' ? '▶ Preparing' : '● Queued'}</span></div>
-        <div class="label">${it.quantity} × ${esc(it.label)}</div>
-        ${it.slot_name ? `<div class="muted">Deal: ${esc(it.slot_name)}</div>` : ''}
-        <ul class="detail">${it.detail.map(d => `<li class="${/half/i.test(d) ? 'side' : ''}">${esc(d)}</li>`).join('')}</ul>
-        ${it.notes ? `<div class="note">⚠ ${esc(it.notes)}</div>` : ''}
-        ${it.change_note ? `<div class="chg">${it.is_remake ? '↻' : '✎'} ${esc(it.change_note)}</div>` : ''}
-        <div class="actions">
-          ${it.status === 'queued' ? `<button data-act="preparing" data-id="${it.id}" data-rev="${it.revision}">Start</button>` : ''}
-          <button class="ready" data-act="ready" data-id="${it.id}" data-rev="${it.revision}">✓ Ready</button>
-        </div></article>`; }).join('')}</div>` + readyStrip(q);
-    app.querySelectorAll('button[data-act]').forEach(b => {
-      if (state.busy.has(b.dataset.id)) b.disabled = true;
-      b.onclick = () => transition(b.dataset.id, b.dataset.act, +b.dataset.rev);
-    });
-    bindAck();
-  }
-  function bindAck() {
-    app.querySelectorAll('button[data-ack]').forEach(b => {
-      b.onclick = async () => {
-        b.disabled = true;
-        const key = uuid();
-        for (let attempt = 0; attempt < 3; attempt++) {
-          try { await api(`tickets/${b.dataset.ack}/acknowledge`, { method: 'POST', key, body: {} }); break; }
-          catch { await new Promise(res => setTimeout(res, 800)); }
-        }
-        poll();
-      };
-    });
-  }
-  function readyStrip(q) {
-    if (!q.recently_ready.length) return '';
-    return `<div class="ready-strip">Recently ready: ${q.recently_ready.map(i => `<span>#${esc(i.check.token)} ${esc(i.label)}</span>`).join('')}</div>`;
-  }
-  async function transition(id, to, rev) {
-    if (state.busy.has(id)) return;
-    state.busy.add(id);
-    const key = uuid();
-    try {
-      let r;
-      for (let attempt = 0; attempt < 3; attempt++) {  // same key on retry: never doubles a transition
-        try { r = await api(`ticket-items/${id}/transitions`, { method: 'POST', key, body: { to, expected_revision: rev } }); break; }
-        catch { await new Promise(res => setTimeout(res, 800)); }
-      }
-    } finally { state.busy.delete(id); poll(); }
+    return [...map.values()].sort((a, b) => new Date(a.due_at) - new Date(b.due_at) || a.seq - b.seq);
   }
 
-  document.getElementById('switch').onclick = async () => {
-    await api('sessions/logout', { method: 'POST' }).catch(() => {});
-    state.session = null; S.set('session', null); state.station = null; S.set('station', null); state.stations = []; render();
-  };
-  setInterval(() => { document.getElementById('clock').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }, 1000);
+  function urgency(t) {
+    const created = new Date(t.created_at).getTime(), due = new Date(t.due_at).getTime(), n = now();
+    const total = Math.max(60000, due - created), used = n - created;
+    const ratio = used / total;
+    return { level: n > due ? 'late' : ratio >= WARN_RATIO ? 'warn' : 'ok', ratio: Math.min(1, ratio), elapsed: used };
+  }
+
+  function draw() {
+    const q = st.queue; if (!q) return;
+    const tickets = groupTickets(q.items);
+    const lateCount = tickets.filter(t => urgency(t).level === 'late').length;
+    const prep = q.items.filter(i => i.status === 'preparing').length;
+    $('stats').innerHTML = `
+      <div class="stat"><b>${tickets.length}</b><small>Orders</small></div>
+      <div class="stat"><b>${prep}</b><small>Cooking</small></div>
+      <div class="stat ${lateCount ? 'late' : ''}"><b>${lateCount}</b><small>Late</small></div>`;
+
+    const changes = q.changes.length ? `<section class="changes">${q.changes.map(t => `
+      <article class="change"><div class="top"><span class="token">#${esc(t.check.token)} · ${where(t.check)}</span><span class="kind">${esc(t.kind.toUpperCase())}</span></div>
+        <div class="what">${esc(t.note)}</div>
+        ${t.items.length ? `<ul>${t.items.map(i => `<li class="${i.status === 'cancelled' ? 'cancelled' : ''}">${i.quantity} × ${esc(i.label)}${i.change_note && i.change_note !== t.note ? ` · ${esc(i.change_note)}` : ''}</li>`).join('')}</ul>` : ''}
+        <button class="primary" data-ack="${t.id}">✓ Got it</button></article>`).join('')}</section>` : '';
+
+    const board = tickets.length ? `<section class="board">${tickets.map(t => {
+      const u = urgency(t);
+      const queued = t.items.filter(i => i.status === 'queued');
+      const kind = t.kind !== 'original' ? `<span class="kind">${esc(t.kind.toUpperCase())}</span>` : '';
+      return `<article class="ticket ${u.level}" data-t="${t.id}">
+        <div class="head"><span class="token">#${esc(t.check.token)}</span><span class="where">${where(t.check)}</span>
+          <span class="timer" data-created="${t.created_at}">${mmss(u.elapsed)}</span></div>
+        <div class="progress"><i style="width:${Math.round(u.ratio * 100)}%"></i></div>
+        <div class="meta">${kind}<span>Due ${new Date(t.due_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          <span>Round ${t.round}</span>${st.station === 'all' && t.station ? `<span>${esc(t.station)}</span>` : ''}</div>
+        <ul class="lines">${t.items.map(it => `
+          <li class="line ${it.status} ${st.busy.has(it.id) ? 'busy' : ''}" data-i="${it.id}" data-rev="${it.revision}" data-status="${it.status}" title="Tap: ${it.status === 'queued' ? 'start cooking' : 'mark ready'}">
+            <span class="qty">${it.quantity}×</span>
+            <div class="body"><div class="label">${esc(it.label)}</div>
+              ${it.slot_name ? `<div class="slot">Deal · ${esc(it.slot_name)}</div>` : ''}
+              ${it.detail.length ? `<ul>${it.detail.map(d => `<li class="${/half/i.test(d) ? 'side' : ''}">${esc(d)}</li>`).join('')}</ul>` : ''}
+              ${it.notes ? `<div class="note">⚠ ${esc(it.notes)}</div>` : ''}
+              ${it.change_note ? `<div class="chg">${it.is_remake ? '↻ Remake' : '✎'} ${esc(it.change_note)}</div>` : ''}
+            </div>
+            <span class="state">${it.status === 'queued' ? 'START' : 'READY?'}</span>
+          </li>`).join('')}</ul>
+        <div class="foot">
+          ${queued.length ? `<button data-start="${t.id}">▶ Start all</button>` : ''}
+          <button class="bump" data-bump="${t.id}">✓ Done</button>
+        </div></article>`; }).join('')}</section>`
+      : `<div class="empty"><b>All clear</b>No orders waiting${st.station === 'all' ? '' : ' at this station'}.</div>`;
+
+    app.innerHTML = changes + board;
+
+    const rr = q.recently_ready.slice(0, 15);
+    $('rail').hidden = !rr.length;
+    $('rail').innerHTML = `<span class="lbl">Ready</span>` + rr.map(i => `<span class="r">#${esc(i.check.token)} ${esc(i.label)}</span>`).join('');
+
+    app.querySelectorAll('.line[data-i]').forEach(el => el.onclick = () =>
+      move([{ id: el.dataset.i, rev: +el.dataset.rev, to: el.dataset.status === 'queued' ? 'preparing' : 'ready' }]));
+    app.querySelectorAll('[data-start]').forEach(b => b.onclick = () => {
+      const t = tickets.find(x => x.id === b.dataset.start);
+      move(t.items.filter(i => i.status === 'queued').map(i => ({ id: i.id, rev: i.revision, to: 'preparing' })));
+    });
+    app.querySelectorAll('[data-bump]').forEach(b => b.onclick = () => {
+      const t = tickets.find(x => x.id === b.dataset.bump);
+      move(t.items.map(i => ({ id: i.id, rev: i.revision, to: 'ready' })));
+    });
+    app.querySelectorAll('[data-ack]').forEach(b => b.onclick = async () => {
+      b.disabled = true; const key = uuid();
+      for (let a = 0; a < 3; a++) { try { await api(`tickets/${b.dataset.ack}/acknowledge`, { method: 'POST', key, body: {} }); break; } catch { await sleep(800); } }
+      poll();
+    });
+  }
+
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  async function move(list) {
+    list = list.filter(x => !st.busy.has(x.id));
+    if (!list.length) return;
+    list.forEach(x => st.busy.add(x.id));
+    draw();
+    await Promise.all(list.map(async x => {
+      const key = uuid();  // same key on retry: a transition is never applied twice
+      for (let a = 0; a < 3; a++) {
+        try { await api(`ticket-items/${x.id}/transitions`, { method: 'POST', key, body: { to: x.to, expected_revision: x.rev } }); break; }
+        catch { await sleep(800); }
+      }
+      st.busy.delete(x.id);
+    }));
+    poll();
+  }
+
+  // ---------------------------------------------------------------- sound on new orders
+  let audio;
+  function beep() {
+    if (!st.sound) return;
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      [0, 0.18].forEach((d, i) => {
+        const o = audio.createOscillator(), g = audio.createGain();
+        o.frequency.value = i ? 1175 : 880; o.type = 'sine';
+        g.gain.setValueAtTime(0.0001, audio.currentTime + d);
+        g.gain.exponentialRampToValueAtTime(0.4, audio.currentTime + d + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + d + 0.16);
+        o.connect(g).connect(audio.destination); o.start(audio.currentTime + d); o.stop(audio.currentTime + d + 0.2);
+      });
+    } catch {}
+  }
+  function notifyNew(q) {
+    const ids = new Set([...q.items.map(i => i.ticket.id), ...q.changes.map(c => c.id)]);
+    if (st.seen && [...ids].some(id => !st.seen.has(id))) beep();
+    st.seen = ids;
+  }
+
+  // ---------------------------------------------------------------- header controls + live timers
+  function drawSound() { $('sound').textContent = st.sound ? '🔔' : '🔕'; }
+  $('sound').onclick = () => { st.sound = !st.sound; S.set('sound', st.sound ? 'on' : 'off'); drawSound(); if (st.sound) beep(); };
+  $('full').onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.();
+  $('out').onclick = async () => { await api('sessions/logout', { method: 'POST' }).catch(() => {}); signOutLocal(); };
+  setInterval(() => {
+    $('clock').textContent = new Date(now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    document.querySelectorAll('.timer[data-created]').forEach(el => { el.textContent = mmss(now() - new Date(el.dataset.created).getTime()); });
+  }, 1000);
+  drawSound();
   render();
 })();
 </script>

@@ -1,7 +1,7 @@
 """Live end-to-end smoke test against a running branch server (dev data only).
 
 Usage:  .venv/bin/python scripts/smoke.py [--server http://localhost:8000] [--dump-fixtures DIR]
-Creates its own pairing codes via Django ORM, then drives the HTTP API exactly like the apps:
+Signs in with the demo staff passwords, then drives the HTTP API exactly like the apps:
 waiter opens a table and sends a half/half pizza, cook marks it ready, cashier opens a drawer,
 takes cash with change and closes the check. Prints each step; exits non-zero on failure.
 """
@@ -12,7 +12,6 @@ import sys
 import urllib.error
 import urllib.request
 import uuid
-from datetime import timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -20,9 +19,8 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "vibeorder.settings")
 import django  # noqa: E402
 
 django.setup()
-from django.utils import timezone  # noqa: E402
 
-from apps.core.models import Branch, PairingCode  # noqa: E402
+from apps.core.models import Branch  # noqa: E402
 
 
 class Client:
@@ -34,8 +32,6 @@ class Client:
         req = urllib.request.Request(self.server + url, method=method,
                                      data=json.dumps(body).encode() if body is not None else None)
         req.add_header("Content-Type", "application/json")
-        if self.device:
-            req.add_header("X-Device-Token", self.device)
         if self.session:
             req.add_header("Authorization", f"Bearer {self.session}")
         if key:
@@ -53,12 +49,11 @@ class Client:
         return data
 
 
-def staff(server, branch, username, pin, kind="tablet"):
-    pc = PairingCode.objects.create(branch=branch, code=PairingCode.new_code(), kind=kind,
-                                    expires_at=timezone.now() + timedelta(minutes=5))
+def staff(server, branch, username, password, kind="tablet"):
     c = Client(server, str(branch.pk))
-    c.device = c.ok("POST", "/api/v1/pair", {"code": pc.code, "name": f"smoke-{username}"})["device_token"]
-    c.session = c.ok("POST", "sessions", {"username": username, "pin": pin})["session_token"]
+    r = c.ok("POST", "/api/v1/login", {"username": username, "password": password, "branch": branch.code,
+                                       "device_name": f"smoke-{username}", "device_kind": kind})
+    c.session = r["session_token"]
     return c
 
 
@@ -69,9 +64,9 @@ def main():
     ap.add_argument("--skip-web", action="store_true", help="skip the storefront order (no sync worker running)")
     a = ap.parse_args()
     branch = Branch.objects.get(code="B1")
-    w, ck, ca = staff(a.server, branch, "bilal", "1111"), staff(a.server, branch, "usman", "4444", "kds"), \
-        staff(a.server, branch, "hamza", "3333", "cashier")
-    print("✓ paired + signed in waiter, cook, cashier")
+    w, ck, ca = staff(a.server, branch, "bilal", "bilal123"), staff(a.server, branch, "usman", "usman123", "kds"), \
+        staff(a.server, branch, "hamza", "hamza123", "cashier")
+    print("✓ signed in waiter, cook, cashier (username + password)")
     if a.dump_fixtures:
         d = Path(a.dump_fixtures)
         d.mkdir(parents=True, exist_ok=True)
@@ -125,7 +120,7 @@ def main():
     assert t["change_minor"] == 20000 and t["balance_minor"] == 0, t
     c = ca.ok("POST", f"checks/{chk['check_id']}/close", {"expected_revision": t["revision"]}, cmd=True)
     print(f"✓ cash 2,000 for 1,800 → change 200; closed receipt {c['receipt_no']}")
-    mg = staff(a.server, branch, "zara", "9999")
+    mg = staff(a.server, branch, "zara", "zara123")
     tid = t["tender_id"]
     s1, r1 = ca.call("POST", f"tenders/{tid}/refunds", {"amount_minor": 30000, "reason": "cold"}, str(uuid.uuid4()))
     assert s1 == 403 and r1["code"] == "approval_required", (s1, r1)

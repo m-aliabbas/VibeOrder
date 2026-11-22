@@ -91,7 +91,7 @@ class SystemPrincipal:
     def __init__(self, branch):
         self.branch = branch
         self.staff, _ = Staff.objects.get_or_create(tenant=branch.tenant, username="web-orders", defaults={
-            "display_name": "Online orders", "pin_hash": "!", "is_active": True})
+            "display_name": "Online orders", "password_hash": "!", "is_active": True})
         self.device = Device.objects.filter(branch=branch, kind="system").first()
         if self.device is None:
             import secrets

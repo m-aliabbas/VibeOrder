@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../api/api_client.dart';
 import '../state/app_state.dart';
 import '../widgets/common.dart';
+import 'printers_screen.dart';
 
 /// Branch/LAN status separate from cloud status; printer queue, last error and next action.
 class DevicesScreen extends StatefulWidget {
@@ -73,18 +74,32 @@ class _DevicesScreenState extends State<DevicesScreen> {
     }
   }
 
-  Future<void> _pairCode() async {
+  String _ago(String? iso) {
+    if (iso == null) return 'never';
+    final d = DateTime.now().difference(DateTime.parse(iso));
+    if (d.inMinutes < 2) return 'just now';
+    if (d.inHours < 2) return '${d.inMinutes} min ago';
+    if (d.inDays < 2) return '${d.inHours} h ago';
+    return '${d.inDays} days ago';
+  }
+
+  /// A lost or stolen tablet: block it so nobody can use it, even with a valid password.
+  Future<void> _block(Map<String, dynamic> d) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Block ${d['name']}?'),
+        content: const Text('Everyone signed in on it is signed out and it cannot sign in again.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Block device')),
+        ],
+      ),
+    );
+    if (ok != true) return;
     try {
-      final r = await app.api.post('pairing-codes', {'kind': 'tablet'});
-      if (!mounted) return;
-      await showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('Pairing code'),
-          content: Text(r.data['code'], style: Theme.of(context).textTheme.displayMedium?.copyWith(letterSpacing: 6)),
-          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Done'))],
-        ),
-      );
+      await app.api.post('devices/${d['id']}/revoke', {});
+      _load();
     } on ApiError catch (e) {
       if (mounted) showError(context, e);
     }
@@ -119,19 +134,20 @@ class _DevicesScreenState extends State<DevicesScreen> {
               ),
             ],
           ),
-          if (app.can('device.pair'))
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: OutlinedButton.icon(
-                  onPressed: _pairCode,
-                  icon: const Icon(Icons.qr_code),
-                  label: const Text('New pairing code'),
-                ),
-              ),
-            ),
-          const SectionLabel('Printers'),
+          SectionLabel(
+            'Printers',
+            trailing: app.can('printer.manage')
+                ? TextButton.icon(
+                    key: const ValueKey('printer-setup'),
+                    onPressed: () async {
+                      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PrintersScreen()));
+                      _load();
+                    },
+                    icon: const Icon(Icons.settings_outlined, size: 18),
+                    label: const Text('Printer setup'),
+                  )
+                : null,
+          ),
           if (h != null)
             for (final p in h['printers'])
               Card(
@@ -178,8 +194,12 @@ class _DevicesScreenState extends State<DevicesScreen> {
               ListTile(
                 leading: Icon(d['kind'] == 'kds' ? Icons.tv : Icons.tablet_android),
                 title: Text(d['name']),
-                subtitle: Text('${d['kind']} · last seen ${d['last_seen_at'] ?? 'never'}'),
-                trailing: d['revoked'] ? const StatusChip('REVOKED', color: Colors.red) : null,
+                subtitle: Text('${d['kind']} · last seen ${_ago(d['last_seen_at'])}'),
+                trailing: d['revoked']
+                    ? const StatusChip('BLOCKED', color: Colors.red)
+                    : app.can('device.revoke') && d['kind'] != 'system'
+                    ? TextButton(onPressed: () => _block(d), child: const Text('Block'))
+                    : null,
               ),
         ],
       ),

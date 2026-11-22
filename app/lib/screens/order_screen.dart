@@ -659,7 +659,7 @@ class _OrderScreenState extends State<OrderScreen> {
     final m = menu;
     final cats = m.categories;
     if (cats.isEmpty) return const Center(child: Text('No menu published at this branch'));
-    category ??= cats.firstWhere((c) => c['code'] == 'pizza', orElse: () => cats.first)['code'];
+    category ??= cats.first['code'];
     final cat = cats.firstWhere((c) => c['code'] == category, orElse: () => cats.first);
     final products = List<Map<String, dynamic>>.from(cat['products']);
     return Column(
@@ -675,6 +675,8 @@ class _OrderScreenState extends State<OrderScreen> {
                   padding: const EdgeInsets.only(right: 8),
                   child: ChoiceChip(
                     key: ValueKey('cat-${c['code']}'),
+                    avatar: Icon(categoryIcon(c['code']), size: 18),
+                    showCheckmark: false,
                     label: Text(c['name']),
                     selected: c['code'] == category,
                     onSelected: (_) => setState(() => category = c['code']),
@@ -686,50 +688,100 @@ class _OrderScreenState extends State<OrderScreen> {
         Expanded(
           child: GridView.extent(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            maxCrossAxisExtent: 220,
-            childAspectRatio: 1.0,
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            children: [
-              for (final p in products)
-                Card(
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
-                    key: ValueKey('product-${p['code']}'),
-                    onTap: () => _addProduct(p),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            p['name'],
-                            style: t.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          if ((p['name_local'] ?? '').toString().isNotEmpty)
-                            Text(p['name_local'], style: t.textTheme.bodyMedium, textDirection: TextDirection.rtl),
-                          const Spacer(),
-                          if (p['available'] == false)
-                            StatusChip('SOLD OUT', color: t.colorScheme.error, icon: Icons.block)
-                          else
-                            Text(
-                              _fromPrice(p),
-                              style: t.textTheme.bodyMedium?.copyWith(
-                                color: t.colorScheme.primary,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-            ],
+            maxCrossAxisExtent: 230,
+            childAspectRatio: 0.82,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            children: [for (final p in products) _productCard(t, p, cat['code'])],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _productCard(ThemeData t, Map<String, dynamic> p, String? catCode) {
+    final soldOut = p['available'] == false;
+    final img = p['image_url'] == null ? null : '${app.server}${p['image_url']}';
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        key: ValueKey('product-${p['code']}'),
+        onTap: () => _addProduct(p),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              flex: 11,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  DishImage(url: img, category: catCode),
+                  if (soldOut)
+                    Container(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      alignment: Alignment.center,
+                      child: const Text(
+                        'SOLD OUT',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.5),
+                      ),
+                    ),
+                  Positioned(
+                    right: 8,
+                    bottom: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: t.colorScheme.surfaceContainerLowest.withValues(alpha: 0.94),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        _fromPrice(p),
+                        style: t.textTheme.labelLarge?.copyWith(
+                          color: t.colorScheme.primary,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              flex: 6,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      p['name'],
+                      style: t.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if ((p['name_local'] ?? '').toString().isNotEmpty)
+                      Text(
+                        p['name_local'],
+                        style: t.textTheme.bodySmall?.copyWith(color: t.colorScheme.onSurfaceVariant),
+                        textDirection: TextDirection.rtl,
+                        maxLines: 1,
+                      ),
+                    if ((p['description'] ?? '').toString().isNotEmpty)
+                      Expanded(
+                        child: Text(
+                          p['description'],
+                          style: t.textTheme.bodySmall?.copyWith(color: t.colorScheme.onSurfaceVariant),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

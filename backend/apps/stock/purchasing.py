@@ -51,9 +51,63 @@ def _check_revision(obj, data):
 
 # ---------------------------------------------------------------- suppliers
 
+def supplier_balance(branch, supplier, before=None):
+    """What the branch owes this supplier: received purchases minus payments (optionally before a business day)."""
+    from django.db.models import Sum
+
+    from .models import SupplierPayment
+    rq = PurchaseReceipt.objects.filter(branch=branch, supplier=supplier)
+    pq = SupplierPayment.objects.filter(branch=branch, supplier=supplier)
+    if before is not None:
+        rq, pq = rq.filter(business_date__lt=before), pq.filter(business_date__lt=before)
+    return (rq.aggregate(s=Sum("total_minor"))["s"] or 0) - (pq.aggregate(s=Sum("amount_minor"))["s"] or 0)
+
+
 def suppliers(branch):
-    return {"suppliers": [{"id": str(s.pk), "name": s.name, "phone": s.phone, "note": s.note}
+    return {"suppliers": [{"id": str(s.pk), "name": s.name, "phone": s.phone, "note": s.note,
+                           "balance_minor": supplier_balance(branch, s)}
                           for s in Supplier.objects.filter(tenant=branch.tenant, is_active=True).order_by("name")]}
+
+
+def pay_supplier(ctx, supplier_id, data):
+    """Record a payment to a supplier. Cash comes out of the open drawer as a paid-out (same transaction)."""
+    from apps.cash.models import DrawerMovement, DrawerShift
+
+    from .models import SupplierPayment
+
+    supplier = Supplier.objects.filter(tenant=ctx.branch.tenant, pk=supplier_id).first()
+    if supplier is None:
+        raise NotFound("Supplier not found")
+    try:
+        amount = int(data.get("amount_minor") or 0)
+    except (TypeError, ValueError):
+        amount = 0
+    if amount <= 0:
+        raise DomainError("Enter the amount paid", field_errors={"amount_minor": "invalid"})
+    method = data.get("method", "cash")
+    if method not in dict(SupplierPayment.METHODS):
+        raise DomainError("Unknown payment method", field_errors={"method": "invalid"})
+    reference = str(data.get("reference", "")).strip()[:60]
+    note = str(data.get("note", "")).strip()[:200]
+    movement = None
+    if method == "cash":
+        shift = DrawerShift.objects.select_for_update().filter(branch=ctx.branch, status="open").order_by(
+            "-opened_at").first()
+        if shift is None:
+            raise Conflict("Open the cash drawer first, or choose bank / wallet", code="no_open_drawer")
+        movement = DrawerMovement.objects.create(
+            shift=shift, kind="paid_out", amount_minor=-amount, staff=ctx.staff,
+            reason=f"Supplier payment: {supplier.name}{' - ' + reference if reference else ''}"[:200],
+            business_date=ctx.branch.business_date())
+        shift.revision += 1
+        shift.save(update_fields=["revision", "updated_at"])
+    pay = SupplierPayment.objects.create(branch=ctx.branch, supplier=supplier, amount_minor=amount, method=method,
+                                         reference=reference, note=note, drawer_movement=movement, staff=ctx.staff,
+                                         business_date=ctx.branch.business_date())
+    ctx.audit("supplier.payment", pay, data={"supplier": str(supplier.pk), "amount_minor": amount, "method": method})
+    ctx.emit("supplier.paid", pay, {"supplier_id": supplier.pk, "amount_minor": amount, "method": method})
+    return {"id": str(pay.pk), "supplier": supplier.name, "amount_minor": amount, "method": method,
+            "balance_minor": supplier_balance(ctx.branch, supplier)}
 
 
 def save_supplier(ctx, data, supplier_id=None):

@@ -1,0 +1,97 @@
+{% load money %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Invoice {% if c.receipt_no %}{{ c.receipt_no }}{% else %}#{{ c.token }}{% endif %}</title>
+<style>
+  :root { --ink:#1d1712; --muted:#7a6a5c; --line:#e8ded3; --accent:#c2410c; --paper:#fff; --bg:#f4efe9; }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui, -apple-system, "Segoe UI", "Noto Nastaliq Urdu", sans-serif; }
+  .bar { max-width:760px; margin:16px auto 0; padding:0 16px; display:flex; gap:10px; justify-content:flex-end; }
+  .bar button { font:inherit; min-height:44px; padding:8px 16px; border-radius:10px; border:1px solid var(--line); background:#fff; cursor:pointer; }
+  .bar button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700; }
+  .sheet { max-width:760px; margin:12px auto 40px; background:var(--paper); border-radius:16px; padding:36px 40px; box-shadow:0 10px 30px rgba(60,30,10,.08); }
+  header { display:flex; justify-content:space-between; gap:20px; align-items:flex-start; border-bottom:2px solid var(--ink); padding-bottom:18px; }
+  .brand { font-size:24px; font-weight:800; letter-spacing:-.01em; }
+  .brand small { display:block; font-size:14px; font-weight:500; color:var(--muted); }
+  .doc { text-align:right; }
+  .doc .kind { font-size:13px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); font-weight:800; }
+  .doc .no { font-size:22px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .meta { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:10px 24px; margin:20px 0; }
+  .meta div span { display:block; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }
+  table { width:100%; border-collapse:collapse; margin-top:8px; }
+  th { text-align:left; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; padding:8px 0; border-bottom:1px solid var(--line); }
+  td { padding:10px 0; border-bottom:1px solid var(--line); vertical-align:top; }
+  .n { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td .sub { color:var(--muted); font-size:13px; }
+  .totals { margin-left:auto; width:min(320px, 100%); margin-top:14px; }
+  .totals div { display:flex; justify-content:space-between; padding:4px 0; font-variant-numeric:tabular-nums; }
+  .totals .grand { font-size:20px; font-weight:800; border-top:2px solid var(--ink); margin-top:6px; padding-top:10px; }
+  .paid { color:#2b8a3e; }
+  .stamp { display:inline-block; border:2px solid currentColor; border-radius:8px; padding:2px 10px; font-weight:800; letter-spacing:.1em; font-size:13px; }
+  .stamp.final { color:#2b8a3e; } .stamp.pro { color:var(--accent); }
+  footer { margin-top:28px; padding-top:14px; border-top:1px dashed var(--line); color:var(--muted); font-size:13px; text-align:center; }
+  /* 80 mm roll layout */
+  body.roll .sheet { max-width:330px; padding:16px; border-radius:0; font-size:13px; }
+  body.roll header { flex-direction:column; align-items:center; text-align:center; }
+  body.roll .doc { text-align:center; }
+  body.roll .meta { grid-template-columns:1fr 1fr; }
+  @media print {
+    body { background:#fff; } .bar { display:none; }
+    .sheet { box-shadow:none; margin:0 auto; border-radius:0; }
+    body.roll .sheet { width:72mm; padding:0; }
+    @page { margin:10mm; } body.roll { }
+  }
+</style>
+</head>
+<body>
+<div class="bar">
+  <button onclick="document.body.classList.toggle('roll')">A4 / 80 mm</button>
+  <button class="primary" onclick="window.print()">Print or save PDF</button>
+</div>
+<div class="sheet">
+  <header>
+    <div class="brand">{{ tenant.name }}<small>{{ branch.name }}</small>{% if branch.address %}<small>{{ branch.address }}</small>{% endif %}</div>
+    <div class="doc">
+      <div class="kind">{% if final %}Tax invoice{% else %}Pro-forma bill{% endif %}</div>
+      <div class="no">{% if c.receipt_no %}{{ c.receipt_no }}{% else %}#{{ c.token }}{% endif %}</div>
+      <span class="stamp {% if final %}final{% else %}pro{% endif %}">{% if final %}PAID{% else %}NOT PAID{% endif %}</span>
+    </div>
+  </header>
+  <div class="meta">
+    <div><span>Date</span>{{ issued|date:"d M Y, H:i" }}</div>
+    <div><span>Order</span>#{{ c.token }} · {% if c.table %}Table {{ c.table.label }}{% else %}{{ c.get_service_type_display }}{% endif %}</div>
+    <div><span>Business day</span>{{ c.business_date|date:"d M Y" }}</div>
+    {% if c.customer_name %}<div><span>Customer</span>{{ c.customer_name }}</div>{% endif %}
+    {% if delivery %}<div><span>Deliver to</span>{{ delivery.address_text }}</div>{% endif %}
+    <div><span>Served by</span>{{ c.opened_by.display_name }}</div>
+  </div>
+  <table>
+    <thead><tr><th>Item</th><th class="n">Qty</th><th class="n">Price</th><th class="n">Amount</th></tr></thead>
+    <tbody>
+    {% for ln in lines %}
+      <tr><td>{{ ln.name }}{% if ln.variant and ln.variant != "regular" %} <span class="sub">({{ ln.variant }})</span>{% endif %}
+        {% for b in ln.breakdown %}{% if b.amount_minor and forloop.counter > 1 %}<div class="sub">+ {{ b.label }}</div>{% endif %}{% endfor %}</td>
+        <td class="n">{{ ln.quantity }}</td>
+        <td class="n">{{ ln.unit_minor|rupees }}</td>
+        <td class="n">{{ ln.total_minor|rupees }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="totals">
+    <div><span>Subtotal</span><span>{{ currency }} {{ a.subtotal_minor|rupees }}</span></div>
+    {% for d in discounts %}<div><span>{% if d.promotion %}{{ d.promotion.name }}{% else %}Discount{% endif %}</span><span>− {{ d.applied_minor|rupees }}</span></div>{% endfor %}
+    {% if a.tax_minor %}<div><span>Sales tax</span><span>{{ a.tax_minor|rupees }}</span></div>{% endif %}
+    <div class="grand"><span>Total</span><span>{{ currency }} {{ a.total_minor|rupees }}</span></div>
+    {% for t in tenders %}<div class="paid"><span>Paid · {{ t.get_method_display }}</span><span>{{ t.amount_minor|rupees }}</span></div>
+      {% if t.change_minor %}<div class="sub"><span>Cash {{ t.cash_received_minor|rupees }}, change</span><span>{{ t.change_minor|rupees }}</span></div>{% endif %}{% endfor %}
+    {% for r in refunds %}<div><span>Refunded · {{ r.reason }}</span><span>− {{ r.amount_minor|rupees }}</span></div>{% endfor %}
+    {% if not final %}<div class="grand"><span>Amount due</span><span>{{ currency }} {{ a.balance_minor|rupees }}</span></div>{% endif %}
+  </div>
+  <footer>Thank you for dining with us · Prices in {{ currency }} · Invoice generated by VibeOrder</footer>
+</div>
+</body>
+</html>

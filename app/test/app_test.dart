@@ -7,9 +7,13 @@ import 'package:vibeorder_staff/api/menu.dart';
 import 'package:vibeorder_staff/main.dart';
 import 'package:vibeorder_staff/screens/alerts_screen.dart';
 import 'package:vibeorder_staff/screens/cashier_screen.dart';
+import 'package:vibeorder_staff/screens/dashboard_screen.dart';
 import 'package:vibeorder_staff/screens/dispatch_screen.dart';
+import 'package:vibeorder_staff/screens/ledgers_screen.dart';
 import 'package:vibeorder_staff/screens/order_screen.dart';
 import 'package:vibeorder_staff/screens/pizza_builder.dart';
+import 'package:vibeorder_staff/screens/printers_screen.dart';
+import 'package:vibeorder_staff/screens/staff_screen.dart';
 import 'package:vibeorder_staff/screens/stock_purchasing.dart';
 import 'package:vibeorder_staff/screens/stock_screen.dart';
 import 'package:vibeorder_staff/state/app_state.dart';
@@ -19,12 +23,12 @@ import 'package:vibeorder_staff/widgets/print_log.dart';
 import 'fake_backend.dart';
 
 Future<(AppState, FakeBackend)> signedIn({String staffId = 's1'}) async {
-  SharedPreferences.setMockInitialValues({'device_token': 'dev', 'branch_id': 'B1', 'server': 'http://fake'});
+  SharedPreferences.setMockInitialValues({'server': 'http://fake'});
   final prefs = await SharedPreferences.getInstance();
   final fake = FakeBackend();
   final api = ApiClient(baseUrl: 'http://fake', client: fake.client);
   final app = AppState(prefs, api: api);
-  await app.login('bilal', '1111');
+  await app.login('http://fake', 'bilal', 'bilal123');
   app.bootstrap!['staff']['id'] = staffId;
   return (app, fake);
 }
@@ -42,31 +46,45 @@ void main() {
     expect(parseRupees('abc'), isNull);
   });
 
-  testWidgets('login with PIN pad lands on the floor', (tester) async {
+  testWidgets('username + password sign in lands on the floor and remembers the device', (tester) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    SharedPreferences.setMockInitialValues({'device_token': 'dev', 'branch_id': 'B1', 'server': 'http://fake'});
+    SharedPreferences.setMockInitialValues({'server': 'http://fake'});
     final prefs = await SharedPreferences.getInstance();
     final fake = FakeBackend();
     final app = AppState(
       prefs,
       api: ApiClient(baseUrl: 'http://fake', client: fake.client),
     );
-    await tester.pumpWidget(VibeOrderApp(state: app));
+    await tester.pumpWidget(VibeOrderApp(state: app, splash: Duration.zero));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('staff-bilal')));
+    expect(find.byKey(const ValueKey('pair-code')), findsNothing, reason: 'no pairing step');
+    await tester.enterText(find.byKey(const ValueKey('username')), 'bilal');
+    await tester.enterText(find.byKey(const ValueKey('password')), 'wrong');
+    await tester.tap(find.byKey(const ValueKey('sign-in')));
     await tester.pumpAndSettle();
-    for (final k in ['1', '1', '1', '1']) {
-      await tester.tap(find.byKey(ValueKey('key-$k')));
-    }
-    await tester.pump();
-    expect(find.text('••••'), findsOneWidget);
+    expect(find.text('Wrong username or password'), findsOneWidget);
+    expect(app.stage, Stage.login);
+
+    await tester.enterText(find.byKey(const ValueKey('password')), 'bilal123');
     await tester.tap(find.byKey(const ValueKey('sign-in')));
     await tester.pumpAndSettle();
     expect(app.stage, Stage.ready);
     expect(find.text('Floor'), findsWidgets);
     expect(find.byKey(const ValueKey('table-1')), findsOneWidget);
+    expect(prefs.getString('device_key'), 'devkey');
+    expect(prefs.getString('session_token'), 'sess', reason: 'reopening the app stays signed in');
+
+    // Sign out and back in: the same device key is sent, so the server reuses the device record.
+    await app.logout();
+    await tester.pumpAndSettle();
+    expect(app.stage, Stage.login);
+    await tester.enterText(find.byKey(const ValueKey('password')), 'bilal123');
+    await tester.tap(find.byKey(const ValueKey('sign-in')));
+    await tester.pumpAndSettle();
+    expect(fake.logins.last['device_key'], 'devkey');
+    expect(fake.logins.last['username'], 'bilal', reason: 'last username is prefilled');
   });
 
   testWidgets('pizza builder labels halves in words and builds the spec item', (tester) async {
@@ -209,11 +227,11 @@ void main() {
     expect(fake.amendments.single['approval'], isNull);
 
     await tester.enterText(find.byKey(const ValueKey('approver')), 'zara');
-    await tester.enterText(find.byKey(const ValueKey('approver-pin')), '9999');
+    await tester.enterText(find.byKey(const ValueKey('approver-password')), '9999');
     await tester.tap(find.byKey(const ValueKey('approve')));
     await tester.pumpAndSettle();
     expect(fake.amendments, hasLength(2));
-    expect(fake.amendments.last['approval'], {'username': 'zara', 'pin': '9999'});
+    expect(fake.amendments.last['approval'], {'username': 'zara', 'password': '9999'});
     expect(fake.amendments.last['action'], 'remove');
     expect(fake.amendments.last['reason'], 'Wrong entry');
     expect(find.text('removed'), findsOneWidget, reason: 'voided line stays visible, struck through');
@@ -266,7 +284,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Manager approval'), findsOneWidget);
     await tester.enterText(find.byKey(const ValueKey('approver')), 'zara');
-    await tester.enterText(find.byKey(const ValueKey('approver-pin')), '9999');
+    await tester.enterText(find.byKey(const ValueKey('approver-password')), '9999');
     await tester.tap(find.byKey(const ValueKey('approve')));
     await tester.pumpAndSettle();
 
@@ -423,7 +441,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Manager approval'), findsOneWidget);
     await tester.enterText(find.byKey(const ValueKey('approver')), 'zara');
-    await tester.enterText(find.byKey(const ValueKey('approver-pin')), '9999');
+    await tester.enterText(find.byKey(const ValueKey('approver-password')), '9999');
     await tester.tap(find.byKey(const ValueKey('approve')));
     await tester.pumpAndSettle();
     expect(fake.handovers, hasLength(2));
@@ -618,5 +636,128 @@ void main() {
     expect(fake.countCalls.last['action'], 'approve');
     expect(fake.countCalls.last['expected_revision'], 2);
     await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('dashboard shows KPIs with change vs previous period and switches range', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final (app, fake) = await signedIn();
+    await tester.pumpWidget(host(app, const DashboardScreen()));
+    await tester.pumpAndSettle();
+    expect(find.text('Rs 123,456'), findsOneWidget);
+    expect(find.text('321'), findsOneWidget);
+    expect(find.textContaining('2 tickets late'), findsOneWidget);
+    expect(find.text('Sales per day'), findsOneWidget);
+    expect(find.text('Chicken Tikka'), findsOneWidget);
+    await tester.tap(find.text('Today'));
+    await tester.pumpAndSettle();
+    expect(fake.requests.last.url.queryParameters['days'], '1');
+    expect(find.text('Sales by hour'), findsOneWidget);
+  });
+
+  testWidgets('manager adds a person with username, password and roles', (tester) async {
+    tester.view.physicalSize = const Size(1200, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final (app, fake) = await signedIn();
+    await tester.pumpWidget(host(app, const StaffScreen()));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('staff-bilal')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('add-staff')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('staff-name')), 'Ali Khan');
+    await tester.enterText(find.byKey(const ValueKey('staff-username')), 'ali');
+    await tester.enterText(find.byKey(const ValueKey('staff-password')), '123');
+    await tester.tap(find.byKey(const ValueKey('role-cashier')));
+    await tester.tap(find.byKey(const ValueKey('staff-save')));
+    await tester.pumpAndSettle();
+    expect(find.text('At least 6 characters'), findsWidgets, reason: 'server field error shown on the field');
+    await tester.enterText(find.byKey(const ValueKey('staff-password')), 'ali12345');
+    await tester.tap(find.byKey(const ValueKey('staff-save')));
+    await tester.pumpAndSettle();
+    expect(fake.staffWrites.last, {
+      'display_name': 'Ali Khan',
+      'username': 'ali',
+      'password': 'ali12345',
+      'roles': ['waiter', 'cashier'],
+    });
+    expect(find.byKey(const ValueKey('staff-ali')), findsOneWidget);
+  });
+
+  testWidgets('ledgers: supplier ledger drills into one supplier and records a bank payment', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final (app, fake) = await signedIn();
+    app.bootstrap!['permissions'] = ['*'];
+    await tester.pumpWidget(host(app, const LedgersScreen()));
+    await tester.pumpAndSettle();
+    expect(fake.ledgerQueries.last['kind'], 'cash');
+    await tester.tap(find.text('Suppliers'));
+    await tester.pumpAndSettle();
+    expect(fake.ledgerQueries.last['kind'], 'supplier');
+    expect(find.text('All suppliers'), findsWidgets);
+    expect(find.text('Rs 10,000'), findsWidgets);
+    await tester.tap(find.text('Goods received'));
+    await tester.pumpAndSettle();
+    expect(fake.ledgerQueries.last['supplier'], 'S1');
+
+    await tester.tap(find.byKey(const ValueKey('pay-supplier')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('pay-amount')), '16,000');
+    await tester.tap(find.text('Bank transfer'));
+    await tester.tap(find.text('Record payment'));
+    await tester.pumpAndSettle();
+    expect(fake.supplierPayments.last, {'amount_minor': 1600000, 'method': 'bank', 'reference': '', 'note': ''});
+  });
+
+  testWidgets('printer setup: add the USB receipt printer picked from the installed list', (tester) async {
+    tester.view.physicalSize = const Size(1200, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final (app, fake) = await signedIn();
+    await tester.pumpWidget(host(app, const PrintersScreen()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('add-printer')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('printer-name')), 'Counter');
+    await tester.tap(find.byKey(const ValueKey('printer-installed')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('EPSON TM-T88V').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('printer-save')));
+    await tester.pumpAndSettle();
+    expect(fake.printerWrites.last, {
+      'name': 'Counter',
+      'purpose': 'receipt',
+      'transport': 'system',
+      'address': 'EPSON TM-T88V',
+      'station_id': null,
+      'width_chars': 48,
+      'is_active': true,
+    });
+    expect(find.text('Counter'), findsOneWidget);
+  });
+
+  testWidgets('splash shows the brand first, then the sign in screen', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    SharedPreferences.setMockInitialValues({'server': 'http://fake'});
+    final prefs = await SharedPreferences.getInstance();
+    final fake = FakeBackend();
+    final app = AppState(
+      prefs,
+      api: ApiClient(baseUrl: 'http://fake', client: fake.client),
+    );
+    await tester.pumpWidget(VibeOrderApp(state: app, splash: const Duration(milliseconds: 800)));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const ValueKey('splash-view')), findsOneWidget);
+    expect(find.text('VibeOrder'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 900));
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.byKey(const ValueKey('splash-view')), findsNothing);
+    expect(find.byKey(const ValueKey('sign-in')), findsOneWidget);
   });
 }

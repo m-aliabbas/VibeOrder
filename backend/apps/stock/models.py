@@ -195,3 +195,23 @@ class StockCountLine(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["count", "item"], name="uniq_count_item")]
+
+
+class SupplierPayment(Stamped):
+    """Money paid to a supplier. Purchases (receipts) raise what we owe; payments lower it (supplier ledger).
+    Cash paid from the drawer also posts a `paid_out` drawer movement in the open shift."""
+    METHODS = [("cash", "Cash from drawer"), ("bank", "Bank transfer"), ("wallet", "JazzCash / EasyPaisa"),
+               ("cheque", "Cheque"), ("other", "Other")]
+
+    branch = models.ForeignKey(Branch, on_delete=models.PROTECT)
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="payments")
+    amount_minor = models.BigIntegerField()
+    method = models.CharField(max_length=10, choices=METHODS)
+    reference = models.CharField(max_length=60, blank=True, help_text="Cheque / transaction no.")
+    note = models.CharField(max_length=200, blank=True)
+    drawer_movement = models.OneToOneField("cash.DrawerMovement", null=True, blank=True, on_delete=models.PROTECT)
+    staff = models.ForeignKey(Staff, on_delete=models.PROTECT)
+    business_date = models.DateField()
+
+    class Meta:
+        constraints = [models.CheckConstraint(condition=models.Q(amount_minor__gt=0), name="supplier_payment_positive")]

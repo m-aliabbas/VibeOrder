@@ -1,0 +1,93 @@
+{% load money %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ l.title }} · {{ l.branch.name }} · {{ l.from|date:"d-m-Y" }} to {{ l.to|date:"d-m-Y" }}</title>
+<style>
+  @page { size: A4; margin: 14mm 12mm 16mm; }
+  :root { --ink:#1b1b1b; --muted:#5f5f5f; --line:#d4d4d4; --head:#f1ece6; --accent:#c2410c; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#e9e6e2; color:var(--ink); font:11px/1.4 "Segoe UI", system-ui, -apple-system, Arial, sans-serif; }
+  .sheet { background:#fff; width:210mm; min-height:297mm; margin:16px auto; padding:14mm 12mm; box-shadow:0 2px 12px rgba(0,0,0,.12); }
+  .toolbar { position:sticky; top:0; z-index:2; display:flex; gap:10px; justify-content:center; align-items:center; padding:10px; background:#2b2622; color:#fff; font-size:13px; }
+  .toolbar button { font:inherit; font-weight:700; padding:8px 18px; border-radius:8px; border:none; background:var(--accent); color:#fff; cursor:pointer; }
+  header.doc { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; border-bottom:2px solid var(--ink); padding-bottom:8px; margin-bottom:10px; }
+  .biz { font-size:18px; font-weight:800; }
+  .muted { color:var(--muted); }
+  .title { text-align:right; }
+  .title h1 { margin:0; font-size:20px; letter-spacing:.02em; text-transform:uppercase; }
+  .summary { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 14px; }
+  .summary div { border:1px solid var(--line); border-radius:6px; padding:5px 10px; min-width:110px; }
+  .summary b { display:block; font-size:13px; font-variant-numeric:tabular-nums; }
+  .summary span { font-size:9.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+  section { margin-bottom:16px; }
+  section h2 { font-size:13px; margin:0; padding:5px 0 1px; }
+  section .sub { color:var(--muted); margin-bottom:4px; }
+  table { width:100%; border-collapse:collapse; }
+  thead { display:table-header-group; }
+  tfoot { display:table-row-group; }
+  tr { page-break-inside:avoid; }
+  th, td { padding:3px 5px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { background:var(--head); font-size:9.5px; text-transform:uppercase; letter-spacing:.04em; text-align:left; border-top:1px solid var(--ink); border-bottom:1px solid var(--ink); }
+  td.r, th.r { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  tbody tr:nth-child(even) td { background:#faf8f6; }
+  tfoot td { font-weight:800; border-top:1.5px solid var(--ink); border-bottom:2px double var(--ink); background:#fff; }
+  .neg { color:#b42318; }
+  .empty { color:var(--muted); font-style:italic; padding:12px 5px; }
+  footer.doc { margin-top:18px; display:flex; justify-content:space-between; color:var(--muted); font-size:10px; border-top:1px solid var(--line); padding-top:6px; }
+  .sign { margin-top:28px; display:flex; gap:40px; }
+  .sign div { flex:1; border-top:1px solid var(--ink); padding-top:4px; text-align:center; color:var(--muted); }
+  @media print {
+    body { background:#fff; }
+    .toolbar { display:none; }
+    .sheet { box-shadow:none; margin:0; width:auto; min-height:0; padding:0; }
+  }
+</style>
+</head>
+<body>
+<div class="toolbar"><span>{{ l.title }} · A4</span><button onclick="window.print()">Print</button></div>
+<div class="sheet">
+  <header class="doc">
+    <div>
+      <div class="biz">{{ l.branch.business }}</div>
+      <div>{{ l.branch.name }}</div>
+      {% if l.branch.address %}<div class="muted">{{ l.branch.address }}</div>{% endif %}
+      <div class="muted">{% if l.branch.phone %}Tel {{ l.branch.phone }}{% endif %}{% if l.branch.tax_number %} · NTN {{ l.branch.tax_number }}{% endif %}</div>
+    </div>
+    <div class="title">
+      <h1>{{ l.title }}</h1>
+      <div><b>{{ l.from|date:"d M Y" }}</b>{% if l.from != l.to %} – <b>{{ l.to|date:"d M Y" }}</b>{% endif %}</div>
+      <div class="muted">Business days · amounts in PKR</div>
+    </div>
+  </header>
+
+  <div class="summary">
+    {% for s in l.summary %}<div><span>{{ s.label }}</span><b>{% if s.money %}{{ s.value|rupees }}{% else %}{{ s.value }}{% endif %}</b></div>{% endfor %}
+  </div>
+
+  {% for sec in l.sections %}
+  <section>
+    <h2>{{ sec.title }}</h2>
+    {% if sec.subtitle %}<div class="sub">{{ sec.subtitle }}</div>{% endif %}
+    <table>
+      <thead><tr>{% for c in sec.columns %}<th class="{% if c.align == 'right' %}r{% endif %}">{{ c.label }}</th>{% endfor %}</tr></thead>
+      <tbody>
+      {% for row in sec.table %}
+        <tr>{% for v, c in row %}<td class="{% if c.align == 'right' %}r{% endif %}">{% if v is None %}{% elif c.money %}<span class="{% if v < 0 %}neg{% endif %}">{{ v|rupees }}</span>{% else %}{{ v }}{% endif %}</td>{% endfor %}</tr>
+      {% empty %}
+        <tr><td class="empty" colspan="{{ sec.columns|length }}">No entries in this period.</td></tr>
+      {% endfor %}
+      </tbody>
+      {% if sec.totals %}<tfoot><tr>{% for v, c in sec.foot %}<td class="{% if c.align == 'right' %}r{% endif %}">{% if v is None %}{% elif c.money %}{{ v|rupees }}{% else %}{{ v }}{% endif %}</td>{% endfor %}</tr></tfoot>{% endif %}
+    </table>
+  </section>
+  {% endfor %}
+  {% if l.truncated %}<p class="muted">Showing the first 5,000 rows. Print a shorter date range for the rest.</p>{% endif %}
+
+  <div class="sign"><div>Prepared by {{ printed_by }}</div><div>Checked by</div><div>Approved by</div></div>
+  <footer class="doc"><span>Printed {{ l.generated_at }} · VibeOrder</span><span>{{ l.title }} · {{ l.branch.name }}</span></footer>
+</div>
+{% if autoprint %}<script>window.addEventListener('load', () => setTimeout(() => window.print(), 300));</script>{% endif %}
+</body>
+</html>

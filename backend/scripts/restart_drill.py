@@ -24,7 +24,6 @@ import time
 import urllib.error
 import urllib.request
 import uuid
-from datetime import timedelta
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parents[1]
@@ -42,10 +41,9 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "vibeorder.settings")
 import django  # noqa: E402
 
 django.setup()
-from django.utils import timezone  # noqa: E402
 
 from apps.cash.models import Tender  # noqa: E402
-from apps.core.models import Branch, CommandReceipt, PairingCode  # noqa: E402
+from apps.core.models import Branch, CommandReceipt  # noqa: E402
 from apps.kitchen.models import PrintJob, ProductionTicket  # noqa: E402
 from apps.orders.models import Check, CheckRound  # noqa: E402
 
@@ -65,8 +63,6 @@ class Client:
         req = urllib.request.Request(self.server + url, method=method,
                                      data=json.dumps(body).encode() if body is not None else None)
         req.add_header("Content-Type", "application/json")
-        if self.device:
-            req.add_header("X-Device-Token", self.device)
         if self.session:
             req.add_header("Authorization", f"Bearer {self.session}")
         if key:
@@ -106,12 +102,11 @@ class Client:
         return d
 
 
-def pair(server, branch, username, pin, kind):
-    pc = PairingCode.objects.create(branch=branch, code=PairingCode.new_code(), kind=kind,
-                                    expires_at=timezone.now() + timedelta(minutes=5))
+def pair(server, branch, username, password, kind="tablet"):
     c = Client(server, str(branch.pk))
-    c.device = c.ok("POST", "/api/v1/pair", {"code": pc.code, "name": f"drill-{username}"})["device_token"]
-    c.session = c.ok("POST", "sessions", {"username": username, "pin": pin})["session_token"]
+    r = c.ok("POST", "/api/v1/login", {"username": username, "password": password, "branch": branch.code,
+                                       "device_name": f"drill-{username}", "device_kind": kind})
+    c.session = r["session_token"]
     return c
 
 
@@ -166,8 +161,8 @@ def main():
     try:
         wait_up(server)
         print(f"✓ branch supervisor up (pid {sup.pid}) with server + print worker on {server}")
-        w = pair(server, branch, "bilal", "1111", "tablet")
-        ca = pair(server, branch, "hamza", "3333", "cashier")
+        w = pair(server, branch, "bilal", "bilal123", "tablet")
+        ca = pair(server, branch, "hamza", "hamza123", "cashier")
         floor = w.ok("GET", "floor")
         free = next(t for ar in floor["areas"] for t in ar["tables"] if not t["occupied"])
         chk = w.ok("POST", "checks", {"service_type": "dine_in", "table_id": free["id"], "guest_count": 2}, cmd=True)

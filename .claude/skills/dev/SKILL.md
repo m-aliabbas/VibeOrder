@@ -14,7 +14,7 @@ it) when done. Read the relevant spec section before coding; record any deviatio
 | Path | What |
 |---|---|
 | `backend/` | Django 5.2 + DRF modular monolith, PostgreSQL 17 (Homebrew `postgresql@17`) |
-| `backend/apps/core` | tenant, branch, staff, membership, device pairing, sessions, **write protocol** (`commands.py`), audit, outbox, counters, scope |
+| `backend/apps/core` | tenant, branch, staff, membership, password login + self-registering devices (`auth.py`), staff accounts, sessions, **write protocol** (`commands.py`), audit, outbox, counters, scope |
 | `backend/apps/catalog` | versioned menu release, products/variants/options/deals, branch sellouts, **pricing engine** (`pricing.py`, pure) |
 | `backend/apps/orders` | areas, tables, checks, rounds, lines, quotes (`services.py`); corrections after send: amend/remake/void/move/merge + `CheckAdjustment` (`corrections.py`) |
 | `backend/apps/kitchen` | production tickets/items, station queue, printers, durable print jobs, `print_worker` command |
@@ -30,7 +30,7 @@ it) when done. Read the relevant spec section before coding; record any deviatio
 | `backend/templates/kds.html` | kitchen display (plain JS, polls the same REST API) |
 | `app/` | Flutter staff app (waiter tablet, cashier); targets android, windows, macos, web |
 | `app/lib/api` | `ApiClient` (error envelope, idempotency keys), `MenuView` |
-| `app/lib/state/app_state.dart` | pairing, session, bootstrap, drafts + pending commands scoped to branch+operator |
+| `app/lib/state/app_state.dart` | username/password login (no pairing), saved session, bootstrap, drafts + pending commands scoped to branch+operator |
 
 ## Start the stack
 
@@ -47,12 +47,13 @@ make restart-drill  # crash-after-commit + power-loss restart drill → RESTART 
 make reset      # wipe dev DB and reseed
 ```
 
-Run servers in the background. `seed_demo` prints staff PINs and single-use pairing codes (24h). Demo staff:
-bilal 1111 / sana 2222 (waiters), hamza 3333 (cashier), usman 4444 (cook), zara 9999 (manager),
-faisal 6666 (packer), imran 5555 / kashif 5557 (riders), ayesha 8888 (owner, B1+B2), nadia 7777 (B2 manager).
+Run servers in the background. Everyone signs in with username + password; demo password = username + "123"
+(bilal, sana waiters · hamza cashier · usman cook · zara manager · faisal packer · imran, kashif riders ·
+ayesha owner B1+B2 · nadia B2 manager). No pairing: any device enters the server address and signs in.
+`make history` adds 30 days of past orders so the dashboard has data (DEBUG only).
 Branch B2 exists for multi-branch work (A20). Owner portal: http://localhost:8000/owner/ (business `demo`).
 Storefront: http://localhost:8000/s/demo/ — branches show "offline" until `make sync` runs (60 s heartbeat).
-New pairing code without reseeding: `make seed` (adds codes, leaves data), or as manager in the app → Devices.
+Managers create people and reset passwords in the app → Staff (`GET/POST staff`).
 
 Look at UI: Flutter web renders to canvas, so drive it with Playwright mouse coordinates
 (`page.mouse.click(x, y)`) and screenshots; the KDS is normal HTML (use selectors).
@@ -69,7 +70,7 @@ Look at UI: Flutter web renders to canvas, so drive it with Playwright mouse coo
 2. Financial, destructive or structural commands take `expected_revision` and bump `revision`. Appends do not.
 3. Scope comes from the session (`branch_for`, `require(perm)`), never from client IDs. Foreign branch → 404.
    Add new permissions to `ROLE_PERMISSIONS` in `apps/core/models.py`; manager/owner have `*`.
-   Manager approval for a non-manager uses `resolve_approver(principal, data, perm)` (username+PIN payload).
+   Manager approval for a non-manager uses `resolve_approver(principal, data, perm)` (`approval: {username, password}`).
 4. Money is integer minor units (`*_minor`, PKR ×100) everywhere; Decimal only at rounding (`round_half_up`).
    Client totals are ignored; the server prices (`Pricer`) and revalidates quotes under lock.
 5. Kitchen/receipt output is a `PrintJob` created in the same transaction; never send to a printer inline.
@@ -96,7 +97,7 @@ Look at UI: Flutter web renders to canvas, so drive it with Playwright mouse coo
   ("Table 6, pizza 1, RIGHT half: remove Olives"); KDS lists them under `changes` until
   `POST tickets/{id}/acknowledge`.
 - Cooked (ready/packed/served) food cannot be modified; remove needs `check.amend_cooked`, remake needs
-  `production.remake`, void needs `check.void`, merge needs `check.merge` (manager, or manager PIN in `approval`).
+  `production.remake`, void needs `check.void`, merge needs `check.merge` (manager, or manager username + password in `approval`).
 - Remakes never change the payable total. Corrections that would drop the total below paid → `refund_required`.
 - Merge/void are pilot-limited to checks with no payments. Merge locks both checks in sorted-id order.
 - Refunds (`apps/cash/refunds.py`): lock check, then tender; cap = tender − (succeeded + pending refunds);
@@ -136,3 +137,23 @@ Look at UI: Flutter web renders to canvas, so drive it with Playwright mouse coo
   resets `stream_position` and breaks the outbox.
 - Reports live in `apps/reports/services.py` (`FUNCS`); every new report must work per branch and go through
   `as_json`/`as_csv` so the scope header is always present.
+
+## Service flow + look (2026-11-19)
+
+- Waiter flow: kitchen `ready` → `GET pickups` / floor `ready_to_serve` → `POST pickups/serve` (`served`).
+  Takeaway still goes through packing handover.
+- Invoices: never expose check IDs publicly — use the signed link from `GET checks/{id}/invoice`
+  (`django.core.signing`, salt `vibeorder.invoice`, 90 days). Template `templates/invoice.html`, money via
+  `{% load money %}{{ x|rupees }}`.
+- Menu photos: drop `<product code>.jpg|png|webp` into `backend/media/menu/` (or set `Product.image`);
+  `image_url` appears in the menu API and the app/storefront show it. Generate with Codex
+  (`codex exec ... image_gen`), outside the sandbox (chatgpt.com must be reachable), then shrink with
+  `sips -s format jpeg -Z 640`.
+- Theme lives in `app/lib/main.dart` (`buildTheme`, light by default); dish cards use `DishImage`.
+- App photography lives in `app/assets/images/` (constants in `AppImages`, `lib/widgets/visuals.dart`). Put text on
+  photos only through `PhotoBackdrop` (overlay keeps it readable) and keep the gradient fallback.
+- Printing: layouts in `apps/kitchen/layouts.py` emit line markup (`{B}{W}{H}{C}{R}{CUT}{DRAWER}`);
+  `escpos.encode` makes printer bytes, `escpos.plain` the readable text. Never put raw ESC/POS in `PrintJob.content`.
+- Ledgers: add a kind in `apps/reports/ledgers.py` returning `{summary, sections[{columns, rows, totals}]}`; the
+  app table and the A4 page (`templates/ledger.html`) render it without further code.
+

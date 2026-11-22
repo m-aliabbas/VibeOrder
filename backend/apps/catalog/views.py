@@ -10,6 +10,19 @@ from .models import BranchAvailability
 from .pricing import Menu
 
 
+def image_url(product):
+    """Menu photo: explicit Product.image, else media/menu/<code>.(webp|jpg|png) when present."""
+    from pathlib import Path
+
+    from django.conf import settings
+    root = Path(settings.MEDIA_ROOT) / "menu"
+    names = [product.image] if product.image else [f"{product.code}.{ext}" for ext in ("webp", "jpg", "png")]
+    for n in names:
+        if n and (root / n).exists():
+            return f"{settings.MEDIA_URL}menu/{n}"
+    return None
+
+
 def serialize_menu(branch):
     from apps.orders.services import menu_for
 
@@ -26,6 +39,7 @@ def serialize_menu(branch):
             prods.append({
                 **{k: pd[k] for k in ("code", "name", "name_local", "kind", "station")},
                 "description": p.description,
+                "image_url": image_url(p),
                 "available": p.code not in unavailable["product"],
                 "variants": [{"code": v.code, "name": v.name, "price_minor": v.price_minor} for v in p.variants.order_by("sort")],
                 "option_groups": pd["groups"],

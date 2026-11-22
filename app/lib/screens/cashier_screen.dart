@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api/api_client.dart';
 import '../api/menu.dart';
@@ -185,6 +186,17 @@ class _CashierScreenState extends State<CashierScreen> {
   }
 
   // ---------------------------------------------------------------- printing
+
+  Future<void> _invoice(Map<String, dynamic> c) async {
+    try {
+      final r = await app.api.get('checks/${c['id']}/invoice');
+      final base = app.server.endsWith('/') ? app.server.substring(0, app.server.length - 1) : app.server;
+      final ok = await launchUrl(Uri.parse('$base${r.data['path']}'), webOnlyWindowName: '_blank');
+      if (!ok && mounted) showError(context, 'Could not open the invoice');
+    } on ApiError catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
 
   Future<void> _reprintReceipt(Map<String, dynamic> c) async {
     final jobs = List<Map<String, dynamic>>.from(c['print_jobs'] ?? const []);
@@ -534,6 +546,12 @@ class _CashierScreenState extends State<CashierScreen> {
                       title: 'KOTs & receipts · #${c['token']}',
                     ),
                     icon: const Icon(Icons.receipt_long_outlined),
+                  ),
+                  TextButton.icon(
+                    key: const ValueKey('invoice'),
+                    onPressed: () => _invoice(c),
+                    icon: const Icon(Icons.description_outlined),
+                    label: Text(c['status'] == 'closed' ? 'Invoice' : 'Pro-forma'),
                   ),
                   if (c['status'] == 'closed')
                     TextButton.icon(

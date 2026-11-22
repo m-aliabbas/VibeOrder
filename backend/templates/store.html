@@ -19,7 +19,9 @@
   h2 { font-size:15px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:28px 0 10px; }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px; }
   .list { display:grid; gap:10px; }
-  .prod { display:flex; gap:12px; align-items:center; justify-content:space-between; }
+  .prod { display:flex; gap:14px; align-items:center; }
+  .prod .info { flex:1; min-width:0; }
+  .thumb { width:88px; height:88px; border-radius:14px; flex:none; object-fit:cover; background:linear-gradient(135deg, rgba(217,72,15,.22), rgba(183,121,31,.18)); display:flex; align-items:center; justify-content:center; font-size:34px; }
   .prod .name { font-weight:650; }
   .prod .local { color:var(--muted); font-size:14px; }
   .prod .desc { color:var(--muted); font-size:14px; }
@@ -101,7 +103,9 @@ function renderMenu() {
     html += `<h2>${esc(c.name)}</h2><div class="list">`;
     for (const p of prods) {
       const from = p.variants.length ? Math.min(...p.variants.map(v => v.price_minor)) : 0;
-      html += `<div class="card prod"><div><div class="name">${esc(p.name)} <span class="local">${esc(p.name_local || "")}</span></div>
+      const icon = {pizza: "🍕", deals: "🎁", karahi: "🍲", bbq: "🍢", rice: "🍚", bread: "🫓", drinks: "🥤", sides: "🍟", extras: "🥗"}[c.code] || "🍽️";
+      const thumb = p.image_url ? `<img class="thumb" src="${esc(p.image_url)}" alt="" loading="lazy">` : `<div class="thumb">${icon}</div>`;
+      html += `<div class="card prod">${thumb}<div class="info"><div class="name">${esc(p.name)} <span class="local">${esc(p.name_local || "")}</span></div>
         ${p.description ? `<div class="desc">${esc(p.description)}</div>` : ""}
         ${p.available ? `<div class="price">${p.kind === "mixed_pizza" ? "Choose two flavours" : (p.variants.length > 1 ? "from " : "") + money(from)}</div>` : `<div class="soldout">Sold out</div>`}</div>
         <button data-p="${esc(p.code)}" ${p.available ? "" : "disabled"}>Add</button></div>`;

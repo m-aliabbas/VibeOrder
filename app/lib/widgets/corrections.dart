@@ -45,10 +45,10 @@ Future<String?> askReason(BuildContext context, String title, {List<String> quic
   );
 }
 
-/// Manager username + PIN, entered on this device. The manager acts with their own identity.
+/// Manager username + password, entered on this device. The manager acts with their own identity.
 Future<Map<String, String>?> askApproval(BuildContext context, String why) {
   final user = TextEditingController();
-  final pin = TextEditingController();
+  final pass = TextEditingController();
   return showDialog<Map<String, String>>(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -68,11 +68,10 @@ Future<Map<String, String>?> askApproval(BuildContext context, String why) {
             ),
             const SizedBox(height: 8),
             TextField(
-              key: const ValueKey('approver-pin'),
-              controller: pin,
+              key: const ValueKey('approver-password'),
+              controller: pass,
               obscureText: true,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Manager PIN'),
+              decoration: const InputDecoration(labelText: 'Manager password'),
             ),
           ],
         ),
@@ -81,7 +80,7 @@ Future<Map<String, String>?> askApproval(BuildContext context, String why) {
         TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
         FilledButton(
           key: const ValueKey('approve'),
-          onPressed: () => Navigator.pop(ctx, {'username': user.text.trim(), 'pin': pin.text}),
+          onPressed: () => Navigator.pop(ctx, {'username': user.text.trim(), 'password': pass.text}),
           child: const Text('Approve'),
         ),
       ],

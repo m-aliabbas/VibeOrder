@@ -6,7 +6,7 @@ from apps.kitchen.models import TicketItem
 
 from .conftest import MIXED_PIZZA, add_round
 
-APPROVAL = {"username": "zara", "pin": "9999"}
+APPROVAL = {"username": "zara", "password": "zara123"}
 FAMILY_DEAL = {"client_line_id": "deal-1", "product": "family-deal", "quantity": 1, "selections": [
     {"slot": "pizza", "product": "mixed-pizza", "variant": "large", "crust": "stuffed",
      "halves": {"left": "tikka", "right": "fajita"}, "options": [{"id": "extra-cheese", "side": "right"}]},
@@ -56,7 +56,7 @@ def test_a12_family_deal_delivery_total_2420(demo, cashier):
 
 
 def test_a13_packing_needs_all_components_or_override(demo, cashier, cook, staff_factory):
-    packer = staff_factory("faisal", "6666")
+    packer = staff_factory("faisal", "faisal123")
     r = cashier.post("checks", {"service_type": "pickup", "customer_name": "Sara", "customer_phone": "03215550000"})
     cid = r.json()["check_id"]
     add_round(cashier, cid, [MIXED_PIZZA, {"client_line_id": "d", "product": "cola-500", "quantity": 1}])
@@ -136,8 +136,8 @@ def test_a14_prepaid_cod_failed_and_remittance(demo, cashier, cook, manager):
 
 
 def test_rider_sees_only_own_active_jobs(demo, cashier, cook, staff_factory):
-    rider = staff_factory("imran", "5555")
-    other = staff_factory("kashif", "5557")
+    rider = staff_factory("imran", "imran123")
+    other = staff_factory("kashif", "kashif123")
     c = open_delivery(cashier)
     add_round(cashier, c["check_id"], [{"client_line_id": "w", "product": "water-500", "quantity": 1}])
     move(cashier, delivery_of(cashier, c["check_id"]), "assigned", rider_id=rider_id(cashier))

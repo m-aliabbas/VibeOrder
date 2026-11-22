@@ -8,7 +8,7 @@ from apps.orders.models import Check
 from .conftest import MIXED_PIZZA, Staff, add_round, open_table
 from .test_protocol import _run_parallel
 
-APPROVAL = {"username": "zara", "pin": "9999"}
+APPROVAL = {"username": "zara", "password": "zara123"}
 COLA = {"client_line_id": "c", "product": "cola-500", "quantity": 1}  # Rs 120
 
 
@@ -99,8 +99,8 @@ def test_a11_two_simultaneous_refunds_stay_within_refundable(tmp_path, settings)
     from apps.core.fixtures_demo import seed
     settings.PRINT_SPOOL_DIR = tmp_path
     d = seed()
-    w, c = Staff(d["branch"], "bilal", "1111"), Staff(d["branch"], "hamza", "3333", "cashier")
-    m1, m2 = Staff(d["branch"], "zara", "9999"), Staff(d["branch"], "zara", "9999")
+    w, c = Staff(d["branch"], "bilal", "bilal123"), Staff(d["branch"], "hamza", "hamza123", "cashier")
+    m1, m2 = Staff(d["branch"], "zara", "zara123"), Staff(d["branch"], "zara", "zara123")
     _, tid = paid_check(w, c)
     r1, r2 = _run_parallel([lambda: refund(m1, tid, 120000), lambda: refund(m2, tid, 120000)])
     codes = sorted([r1.status_code, r2.status_code])

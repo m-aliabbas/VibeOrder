@@ -5,14 +5,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
 
-enum Stage { setup, login, ready }
+enum Stage { login, ready }
 
-/// Device pairing, operator session and branch bootstrap.
+/// Username + password sign in, the operator session and branch bootstrap.
+/// There is no pairing: the device registers itself at the first sign in and keeps a random device key.
 class AppState extends ChangeNotifier {
   AppState(this.prefs, {ApiClient? api}) : api = api ?? ApiClient(baseUrl: prefs.getString('server') ?? defaultServer) {
     this.api
-      ..deviceToken = prefs.getString('device_token')
       ..branchId = prefs.getString('branch_id')
+      ..sessionToken = prefs.getString('session_token')
       ..onUnauthorized = _onUnauthorized;
   }
 
@@ -24,18 +25,21 @@ class AppState extends ChangeNotifier {
   Map<String, dynamic>? bootstrap;
   Map<String, dynamic>? menu;
   String? lastError;
+  bool restoring = false;
 
-  Stage get stage {
-    if (api.deviceToken == null || api.branchId == null) return Stage.setup;
-    if (api.sessionToken == null || bootstrap == null) return Stage.login;
-    return Stage.ready;
-  }
+  Stage get stage => api.sessionToken == null || bootstrap == null ? Stage.login : Stage.ready;
+
+  /// True when a saved session exists that we have not checked with the server yet.
+  bool get hasSavedSession => api.sessionToken != null && bootstrap == null;
 
   String get server => api.baseUrl;
   String get branchId => api.branchId ?? '';
+  String get branchName => bootstrap?['branch']?['name'] ?? prefs.getString('branch_name') ?? '';
   String get staffId => bootstrap?['staff']?['id'] ?? '';
   String get staffName => bootstrap?['staff']?['display_name'] ?? '';
-  String get deviceName => prefs.getString('device_name') ?? '';
+  String get username => bootstrap?['staff']?['username'] ?? '';
+  String get lastUsername => prefs.getString('last_username') ?? '';
+  String get deviceName => prefs.getString('device_name') ?? defaultDeviceName;
   String get currency => bootstrap?['branch']?['currency'] ?? 'PKR';
   List<String> get roles => List<String>.from(bootstrap?['roles'] ?? const []);
   bool can(String perm) {
@@ -44,6 +48,17 @@ class AppState extends ChangeNotifier {
   }
 
   bool get isCashier => can('tender.take');
+  bool get isManager => can('staff.manage');
+
+  static String get defaultDeviceName {
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+      case TargetPlatform.iOS:
+        return 'Tablet';
+      default:
+        return 'Counter PC';
+    }
+  }
 
   /// Roles that see at least one alert category (stock, kitchen, print, cash, system).
   bool get seesAlerts => const ['stock.view', 'station.view', 'print.reprint', 'tender.take', 'ops.view'].any(can);
@@ -66,34 +81,61 @@ class AppState extends ChangeNotifier {
     } catch (_) {}
   }
 
-  Future<void> pair(String server, String code, String name) async {
-    api.baseUrl = server.trim();
-    api.deviceToken = null;
-    final r = await api.post('/api/v1/pair', {'code': code.trim(), 'name': name});
-    api.deviceToken = r.data['device_token'];
+  /// Sign in with username + password. Throws [ChooseBranch] when the person works at several branches
+  /// and did not pick one; call again with [branch].
+  Future<void> login(String server, String username, String password, {String? branch}) async {
+    api.baseUrl = server.trim().isEmpty ? defaultServer : server.trim();
+    api.sessionToken = null;
+    ApiResult r;
+    try {
+      r = await api.post('/api/v1/login', {
+        'username': username.trim(),
+        'password': password,
+        'device_name': deviceName,
+        'device_kind': 'tablet',
+        'device_key': ?prefs.getString('device_key'),
+        'branch': ?branch,
+      });
+    } on ApiError catch (e) {
+      if (e.code == 'choose_branch') {
+        throw ChooseBranch(List<Map<String, dynamic>>.from(e.body['branches'] ?? const []));
+      }
+      rethrow;
+    }
+    api.sessionToken = r.data['session_token'];
     api.branchId = r.data['branch_id'];
     await prefs.setString('server', api.baseUrl);
-    await prefs.setString('device_token', api.deviceToken!);
+    await prefs.setString('device_key', r.data['device_key']);
     await prefs.setString('branch_id', api.branchId!);
-    await prefs.setString('device_name', name);
     await prefs.setString('branch_name', r.data['branch_name'] ?? '');
-    notifyListeners();
-  }
-
-  Future<List<Map<String, dynamic>>> staffDirectory() async {
-    final r = await api.get('staff-directory');
-    return List<Map<String, dynamic>>.from(r.data['staff']);
-  }
-
-  Future<void> login(String username, String pin) async {
-    final r = await api.post('sessions', {'username': username, 'pin': pin});
-    api.sessionToken = r.data['session_token'];
+    await prefs.setString('last_username', username.trim());
     try {
       await refreshBootstrap();
+      await prefs.setString('session_token', api.sessionToken!);
     } catch (e) {
       api.sessionToken = null;
       rethrow;
     }
+  }
+
+  /// Reopen the app signed in when the saved session is still valid.
+  Future<void> restoreSession() async {
+    if (!hasSavedSession || restoring) return;
+    restoring = true;
+    notifyListeners();
+    try {
+      await refreshBootstrap();
+    } on ApiError catch (e) {
+      if (!e.uncertain) await _forgetSession();
+      lastError = e.uncertain ? e.message : null;
+    } finally {
+      restoring = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> changePassword(String current, String next) async {
+    await api.post('me/password', {'current_password': current, 'new_password': next});
   }
 
   Future<void> refreshBootstrap() async {
@@ -107,35 +149,24 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Shared-device lock: drop the operator session but keep the device paired.
-  Future<void> lock() async {
+  /// Sign out (shared tablets: the next person signs in with their own account).
+  Future<void> logout() async {
     try {
       await api.post('sessions/logout', {});
     } catch (_) {}
-    _clearSession();
+    await _forgetSession();
   }
 
   void _onUnauthorized() {
     lastError = 'Session ended. Please sign in again.';
-    _clearSession();
+    _forgetSession();
   }
 
-  void _clearSession() {
+  Future<void> _forgetSession() async {
     api.sessionToken = null;
     bootstrap = null;
     alertCounts = const {};
-    notifyListeners();
-  }
-
-  Future<void> unpair() async {
-    for (final k in ['device_token', 'branch_id', 'device_name']) {
-      await prefs.remove(k);
-    }
-    api
-      ..deviceToken = null
-      ..branchId = null
-      ..sessionToken = null;
-    bootstrap = null;
+    await prefs.remove('session_token');
     notifyListeners();
   }
 
@@ -170,4 +201,9 @@ class AppState extends ChangeNotifier {
       await prefs.setString(_scoped('pending', checkId), jsonEncode(pending));
     }
   }
+}
+
+class ChooseBranch implements Exception {
+  ChooseBranch(this.branches);
+  final List<Map<String, dynamic>> branches;
 }

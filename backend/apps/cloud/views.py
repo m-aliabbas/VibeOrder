@@ -174,31 +174,22 @@ def _owner(request):
 @api_view(["POST"])
 @public
 def owner_login(request):
+    from apps.core.auth import InvalidLogin, verify_password
     from apps.core.models import Tenant
-    tenant = Tenant.objects.filter(slug=request.data.get("tenant", "")).first()
-    with transaction.atomic():
-        staff = Staff.objects.select_for_update().filter(tenant=tenant, username=request.data.get("username", ""),
-                                                         is_active=True).first() if tenant else None
-        now = timezone.now()
-        if staff and staff.locked_until and staff.locked_until > now:
-            raise DomainError("Too many attempts. Try again later.", code="locked", http_status=429)
-        if staff is None or not staff.check_pin(str(request.data.get("pin", ""))):
-            if staff:
-                staff.failed_attempts += 1
-                if staff.failed_attempts >= settings.PIN_MAX_ATTEMPTS:
-                    staff.locked_until = now + timedelta(seconds=settings.PIN_LOCKOUT_SECONDS)
-                    staff.failed_attempts = 0
-                staff.save(update_fields=["failed_attempts", "locked_until"])
-            return Response({"code": "invalid_credentials", "message": "Unknown user or PIN", "field_errors": {}},
-                            status=401)
-        staff.failed_attempts = 0
-        staff.save(update_fields=["failed_attempts"])
-        if not Owner(staff).branch_ids:
-            raise Forbidden("No owner or manager access", code="permission_denied")
-        raw = new_token()
-        OwnerSession.objects.create(staff=staff, token_hash=Device.hash_token(raw),
-                                    expires_at=now + timedelta(hours=settings.OWNER_SESSION_TTL_HOURS))
-    return Response({"token": raw, "name": staff.display_name, "tenant": tenant.name}, status=201)
+    slug = request.data.get("tenant")
+    tenant = Tenant.objects.filter(slug=slug).first() if slug else Tenant.objects.order_by("created_at").first()
+    try:
+        staff = verify_password(request.data.get("username", ""), request.data.get("password", ""),
+                                Staff.objects.filter(tenant=tenant))
+    except InvalidLogin:
+        return Response({"code": "invalid_credentials", "message": "Wrong username or password", "field_errors": {}},
+                        status=401)
+    if not Owner(staff).branch_ids:
+        raise Forbidden("No owner or manager access", code="permission_denied")
+    raw = new_token()
+    OwnerSession.objects.create(staff=staff, token_hash=Device.hash_token(raw),
+                                expires_at=timezone.now() + timedelta(hours=settings.OWNER_SESSION_TTL_HOURS))
+    return Response({"token": raw, "name": staff.display_name, "tenant": staff.tenant.name}, status=201)
 
 
 @api_view(["GET"])

@@ -16,7 +16,7 @@ def require(request, perm):
 
 
 def resolve_approver(principal, data, perm):
-    """Approval by the operator if permitted, otherwise by a manager's username + PIN in the payload.
+    """Approval by the operator if permitted, otherwise by a manager's username + password in the payload.
     Returns the approving Staff. The approver acts with their own identity."""
     from .errors import DomainError
     from .models import Staff
@@ -24,11 +24,11 @@ def resolve_approver(principal, data, perm):
     if principal.has(perm):
         return principal.staff
     approval = (data or {}).get("approval") or {}
-    username, pin = approval.get("username"), approval.get("pin")
-    if not username or not pin:
+    username, password = approval.get("username"), approval.get("password")
+    if not username or not password:
         raise Forbidden("Manager approval required", code="approval_required")
     staff = Staff.objects.filter(tenant=principal.branch.tenant, username=username, is_active=True).first()
-    if staff is None or not staff.check_pin(str(pin)):
+    if staff is None or not staff.check_password(str(password)):
         raise Forbidden("Approval credentials rejected", code="approval_rejected")
     roles = set(staff.memberships.filter(branch=principal.branch, is_active=True).values_list("role", flat=True))
     if not roles & {"manager", "owner"}:

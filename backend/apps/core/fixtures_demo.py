@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from apps.catalog.models import (Category, DealSlot, DealSlotChoice, MenuRelease, Option, OptionGroup, OptionPrice,
                                  Product, Variant)
-from apps.core.models import Branch, Membership, PairingCode, Staff, Station, Tenant
+from apps.core.models import Branch, Membership, Staff, Station, Tenant
 from apps.kitchen.models import Printer
 from apps.orders.models import Area, DiningTable
 
@@ -19,21 +19,21 @@ def did(name: str) -> uuid.UUID:
 
 
 STAFF = [
-    # username, display, pin, roles
-    ("bilal", "Bilal (Waiter)", "1111", ["waiter"]),
-    ("sana", "Sana (Waiter)", "2222", ["waiter"]),
-    ("hamza", "Hamza (Cashier)", "3333", ["cashier"]),
-    ("usman", "Usman (Cook)", "4444", ["cook"]),
-    ("zara", "Zara (Manager)", "9999", ["manager"]),
-    ("faisal", "Faisal (Packer)", "6666", ["packer"]),
-    ("imran", "Imran (Rider)", "5555", ["rider"]),
-    ("kashif", "Kashif (Rider)", "5557", ["rider"]),
+    # username, display, password, roles
+    ("bilal", "Bilal (Waiter)", "bilal123", ["waiter"]),
+    ("sana", "Sana (Waiter)", "sana123", ["waiter"]),
+    ("hamza", "Hamza (Cashier)", "hamza123", ["cashier"]),
+    ("usman", "Usman (Cook)", "usman123", ["cook"]),
+    ("zara", "Zara (Manager)", "zara123", ["manager"]),
+    ("faisal", "Faisal (Packer)", "faisal123", ["packer"]),
+    ("imran", "Imran (Rider)", "imran123", ["rider"]),
+    ("kashif", "Kashif (Rider)", "kashif123", ["rider"]),
 ]
 STAFF_B2 = [
-    ("nadia", "Nadia (Manager B2)", "7777", ["manager"]),
-    ("omer", "Omer (Waiter B2)", "1212", ["waiter"]),
+    ("nadia", "Nadia (Manager B2)", "nadia123", ["manager"]),
+    ("omer", "Omer (Waiter B2)", "omer123", ["waiter"]),
 ]
-OWNER = ("ayesha", "Ayesha (Owner)", "8888")
+OWNER = ("ayesha", "Ayesha (Owner)", "ayesha123")
 
 SIZES = [("small", "Small", 0), ("medium", "Medium", 1), ("large", "Large", 2)]
 FLAVOURS = [
@@ -51,19 +51,20 @@ def rs(pkr):
 
 
 @transaction.atomic
-def seed(reset=False, pairing_codes=True):
+def seed(reset=False):
     tenant, _ = Tenant.objects.get_or_create(id=did("tenant"), defaults={"name": "Demo Pizzeria", "slug": "demo"})
     branch, _ = Branch.objects.get_or_create(
         id=did("branch-B1"), defaults={"tenant": tenant, "code": "B1", "name": "Demo Pizzeria – Gulberg"})
     stations = {}
-    for code, name, packing in [("pizza", "Pizza oven", False), ("fryer", "Fryer", False), ("packing", "Packing", True)]:
+    for code, name, packing in [("pizza", "Pizza oven", False), ("fryer", "Fryer", False), ("packing", "Packing", True),
+                                ("kitchen", "Hot kitchen", False), ("tandoor", "Tandoor & BBQ", False)]:
         stations[code], _ = Station.objects.get_or_create(
             id=did(f"station-{code}"), defaults={"branch": branch, "code": code, "name": name, "is_packing": packing})
-    for username, display, pin, roles in STAFF:
+    for username, display, password, roles in STAFF:
         s = Staff.objects.filter(tenant=tenant, username=username).first()
         if s is None:
             s = Staff(id=did(f"staff-{username}"), tenant=tenant, username=username, display_name=display)
-            s.set_pin(pin)
+            s.set_password(password)
             s.save()
         for r in roles:
             Membership.objects.get_or_create(staff=s, branch=branch, role=r)
@@ -86,23 +87,18 @@ def seed(reset=False, pairing_codes=True):
     if branch.active_release_id is None:
         branch.active_release = release
         branch.save(update_fields=["active_release"])
+    release = ensure_general_menu(tenant, branch, release)
     b2 = seed_branch_b2(tenant, release)
     owner = Staff.objects.filter(tenant=tenant, username=OWNER[0]).first()
     if owner is None:
         owner = Staff(id=did(f"staff-{OWNER[0]}"), tenant=tenant, username=OWNER[0], display_name=OWNER[1])
-        owner.set_pin(OWNER[2])
+        owner.set_password(OWNER[2])
         owner.save()
     for br in (branch, b2):
         Membership.objects.get_or_create(staff=owner, branch=br, role="owner")
     seed_operations(tenant, branch, b2)
-    codes = {}
-    if pairing_codes:
-        for kind in ("tablet", "tablet", "cashier", "kds"):
-            pc = PairingCode.objects.create(branch=branch, code=PairingCode.new_code(), kind=kind,
-                                            expires_at=timezone.now() + timedelta(days=1))
-            codes.setdefault(kind, []).append(pc.code)
     return {"tenant": tenant, "branch": branch, "branch2": b2, "release": release, "stations": stations,
-            "pairing_codes": codes, "cloud_tokens": {"B1": dev_cloud_token(branch), "B2": dev_cloud_token(b2)}}
+            "cloud_tokens": {"B1": dev_cloud_token(branch), "B2": dev_cloud_token(b2)}}
 
 
 def dev_cloud_token(branch):
@@ -113,7 +109,8 @@ def seed_branch_b2(tenant, release):
     b2, _ = Branch.objects.get_or_create(id=did("branch-B2"), defaults={
         "tenant": tenant, "code": "B2", "name": "Demo Pizzeria – Johar Town", "active_release": release})
     st = {}
-    for code, name, packing in [("pizza", "Pizza oven", False), ("fryer", "Fryer", False), ("packing", "Packing", True)]:
+    for code, name, packing in [("pizza", "Pizza oven", False), ("fryer", "Fryer", False), ("packing", "Packing", True),
+                                ("kitchen", "Hot kitchen", False), ("tandoor", "Tandoor & BBQ", False)]:
         st[code], _ = Station.objects.get_or_create(
             id=did(f"B2-station-{code}"), defaults={"branch": b2, "code": code, "name": name, "is_packing": packing})
     area, _ = Area.objects.get_or_create(id=did("B2-area-main"), defaults={"branch": b2, "code": "main", "name": "Hall", "sort": 1})
@@ -122,11 +119,11 @@ def seed_branch_b2(tenant, release):
     Printer.objects.get_or_create(id=did("B2-printer-counter"), defaults={
         "branch": b2, "name": "B2 counter printer", "purpose": "receipt", "transport": "spool_file",
         "address": "b2-counter-receipt"})
-    for username, display, pin, roles in STAFF_B2:
+    for username, display, password, roles in STAFF_B2:
         s = Staff.objects.filter(tenant=tenant, username=username).first()
         if s is None:
             s = Staff(id=did(f"staff-{username}"), tenant=tenant, username=username, display_name=display)
-            s.set_pin(pin)
+            s.set_password(password)
             s.save()
         for r in roles:
             Membership.objects.get_or_create(staff=s, branch=b2, role=r)
@@ -155,7 +152,28 @@ STOCK_ITEMS = [
     ("box-medium", "Pizza box medium", "pcs", "bundle of 50", 50, 200, "3000"),
     ("box-large", "Pizza box large", "pcs", "bundle of 50", 50, 200, "3500"),
     ("fries-bag", "Fries bag", "pcs", "pack of 100", 100, 500, "500"),
+    ("mutton", "Mutton (bone-in)", "g", "kg", 1000, 15000, "220"),
+    ("chicken", "Chicken (bone-in)", "g", "kg", 1000, 25000, "75"),
+    ("chicken-boneless", "Chicken boneless", "g", "kg", 1000, 8000, "110"),
+    ("beef-mince", "Beef mince", "g", "kg", 1000, 6000, "130"),
+    ("tomato", "Tomatoes", "g", "kg", 1000, 15000, "18"),
+    ("ginger-garlic", "Ginger garlic paste", "g", "kg", 1000, 3000, "60"),
+    ("green-chilli", "Green chillies", "g", "kg", 1000, 2000, "40"),
+    ("rice", "Basmati rice", "g", "25 kg bag", 25000, 25000, "45"),
+    ("flour", "Flour (maida)", "g", "40 kg bag", 40000, 40000, "16"),
+    ("yogurt", "Yogurt", "g", "kg", 1000, 10000, "28"),
+    ("butter", "Butter", "g", "kg", 1000, 3000, "180"),
+    ("cream", "Cream", "ml", "L", 1000, 3000, "90"),
+    ("lentils", "Mash daal", "g", "kg", 1000, 5000, "48"),
+    ("salad-veg", "Salad vegetables", "g", "kg", 1000, 5000, "20"),
+    ("milk", "Milk", "ml", "L", 1000, 10000, "22"),
+    ("sugar", "Sugar", "g", "kg", 1000, 5000, "15"),
 ]
+
+# Reorder level per item (base units); below it the owner gets a low-stock alert.
+REORDER = {"mutton": 5000, "chicken": 8000, "cheese": 5000, "dough": 10000, "rice": 5000, "flour": 10000,
+           "cola-500": 48, "cola-1500": 24, "box-large": 50, "tomato": 4000, "yogurt": 3000, "chicken-boneless": 3000,
+           "beef-mince": 2000, "potato": 5000, "oil": 5000}
 
 # kind, code, {size: {item: qty}}  ('' = any size)
 RECIPES = [
@@ -179,6 +197,23 @@ RECIPES = [
     ("product", "water-500", {"": {"water-500": 1}}),
     ("packaging", "pizza", {"small": {"box-small": 1}, "medium": {"box-medium": 1}, "large": {"box-large": 1}}),
     ("packaging", "fries", {"": {"fries-bag": 1}}),
+    ("product", "mutton-karahi", {"half": {"mutton": 500, "tomato": 250, "ginger-garlic": 30, "green-chilli": 15, "oil": 60},
+                                  "full": {"mutton": 1000, "tomato": 500, "ginger-garlic": 60, "green-chilli": 30, "oil": 120}}),
+    ("product", "chicken-karahi", {"half": {"chicken": 500, "tomato": 250, "ginger-garlic": 30, "green-chilli": 15, "oil": 60},
+                                   "full": {"chicken": 1000, "tomato": 500, "ginger-garlic": 60, "green-chilli": 30, "oil": 120}}),
+    ("product", "daal-mash", {"": {"lentils": 150, "butter": 20, "ginger-garlic": 10}}),
+    ("product", "chicken-tikka", {"": {"chicken": 250, "yogurt": 30}}),
+    ("product", "seekh-kebab", {"": {"beef-mince": 300, "ginger-garlic": 15}}),
+    ("product", "malai-boti", {"": {"chicken-boneless": 300, "cream": 40, "yogurt": 20}}),
+    ("product", "chicken-biryani", {"single": {"rice": 150, "chicken": 120, "yogurt": 20, "oil": 20},
+                                    "full": {"rice": 300, "chicken": 240, "yogurt": 40, "oil": 40}}),
+    ("product", "mutton-pulao", {"": {"rice": 180, "mutton": 200, "oil": 25}}),
+    ("product", "naan", {"": {"flour": 120}}),
+    ("product", "roghni-naan", {"": {"flour": 130, "butter": 10, "milk": 20}}),
+    ("product", "garlic-naan", {"": {"flour": 130, "butter": 15, "ginger-garlic": 10}}),
+    ("product", "raita", {"": {"yogurt": 150}}),
+    ("product", "salad", {"": {"salad-veg": 200}}),
+    ("product", "lassi", {"": {"yogurt": 200, "milk": 100, "sugar": 30}}),
 ]
 
 
@@ -216,10 +251,14 @@ def seed_operations(tenant, branch, b2):
             if created:
                 for item_code, qty in comps.items():
                     RecipeComponent.objects.create(recipe=r, item=items[item_code], quantity=qty)
+    from apps.stock.models import StockLevel
     for br in (branch, b2):
         for code, name, unit, pu, factor, opening, cost in STOCK_ITEMS:
             post(br, items[code], "receipt", Decimal(opening), "seed:opening", unit_cost=Decimal(cost),
                  reason="Opening stock (demo)")
+            if code in REORDER:
+                StockLevel.objects.filter(branch=br, item=items[code], reorder_level__isnull=True).update(
+                    reorder_level=REORDER[code])
             # Demo reorder level: a quarter of the opening stock (kept if a manager already changed it).
             StockLevel.objects.filter(branch=br, item=items[code], reorder_level__isnull=True).update(
                 reorder_level=Decimal(opening) / 4)
@@ -285,6 +324,7 @@ def build_release(tenant, version=1, mixed_policy="higher", tax_rate_bp=0, price
                                    station_code="packing", sort=i)
         Variant.objects.create(product=d, code="regular", name="Regular", price_minor=rs(price))
         drinks.append(d)
+    build_general_menu(r)
     deal = Product.objects.create(release=r, category=cat_deals, code="family-deal", name="Family Deal",
                                   name_local="فیملی ڈیل", kind="deal", station_code="packing", sort=1,
                                   description="1 large pizza (any flavour or half & half) + 1.5L drink")
@@ -297,3 +337,60 @@ def build_release(tenant, version=1, mixed_policy="higher", tax_rate_bp=0, price
     for d in drinks[:2]:
         DealSlotChoice.objects.create(slot=s_drink, product=d, variant_code="regular", upgrade_minor=0)
     return r
+
+
+# Pakistani restaurant menu (general dishes alongside pizza). code, name, urdu, station, description, variants
+GENERAL_MENU = [
+    ("karahi", "Karahi", 4, [
+        ("mutton-karahi", "Mutton Karahi", "مٹن کڑاہی", "kitchen", "Fresh mutton cooked in tomatoes, ginger and green chilli",
+         [("half", "Half kg", 2400), ("full", "Full kg", 4500)]),
+        ("chicken-karahi", "Chicken Karahi", "چکن کڑاہی", "kitchen", "Desi-style chicken karahi with fresh tomatoes",
+         [("half", "Half kg", 1300), ("full", "Full kg", 2400)]),
+        ("daal-mash", "Daal Mash", "دال ماش", "kitchen", "Buttery white lentils with tadka", [("regular", "Regular", 550)]),
+    ]),
+    ("bbq", "BBQ", 5, [
+        ("chicken-tikka", "Chicken Tikka", "چکن تکہ", "tandoor", "Charcoal-grilled leg piece", [("regular", "1 piece", 450)]),
+        ("seekh-kebab", "Seekh Kebab", "سیخ کباب", "tandoor", "Beef mince kebabs, 4 skewers", [("regular", "4 pieces", 900)]),
+        ("malai-boti", "Malai Boti", "ملائی بوٹی", "tandoor", "Creamy boneless chicken, 10 pieces", [("regular", "10 pieces", 1100)]),
+    ]),
+    ("rice", "Rice", 6, [
+        ("chicken-biryani", "Chicken Biryani", "چکن بریانی", "kitchen", "Spiced basmati rice with chicken",
+         [("single", "Single", 450), ("full", "Full", 850)]),
+        ("mutton-pulao", "Mutton Pulao", "مٹن پلاؤ", "kitchen", "Yakhni pulao with tender mutton", [("single", "Single", 750)]),
+    ]),
+    ("bread", "Naan & Roti", 7, [
+        ("naan", "Plain Naan", "نان", "tandoor", "", [("regular", "Regular", 40)]),
+        ("roghni-naan", "Roghni Naan", "روغنی نان", "tandoor", "With sesame and butter", [("regular", "Regular", 80)]),
+        ("garlic-naan", "Garlic Naan", "گارلک نان", "tandoor", "", [("regular", "Regular", 120)]),
+    ]),
+    ("extras", "Raita & Salad", 8, [
+        ("raita", "Raita", "رائتہ", "packing", "", [("regular", "Regular", 120)]),
+        ("salad", "Fresh Salad", "سلاد", "packing", "", [("regular", "Regular", 150)]),
+        ("lassi", "Sweet Lassi", "لسی", "packing", "", [("regular", "Glass", 250)]),
+    ]),
+]
+
+
+def build_general_menu(r):
+    for cat_code, cat_name, sort, items in GENERAL_MENU:
+        cat = Category.objects.create(release=r, code=cat_code, name=cat_name, sort=sort)
+        for i, (code, name, urdu, station, desc, variants) in enumerate(items):
+            p = Product.objects.create(release=r, category=cat, code=code, name=name, name_local=urdu, kind="item",
+                                       station_code=station, description=desc, sort=i)
+            for j, (vcode, vname, price) in enumerate(variants):
+                Variant.objects.create(product=p, code=vcode, name=vname, price_minor=rs(price), sort=j)
+
+
+def ensure_general_menu(tenant, branch, release):
+    """Older dev databases have a pizza-only release: publish a new version that adds the restaurant dishes
+    (published releases are immutable, so this is a normal menu update, not an edit)."""
+    from apps.catalog.authoring import clone_release, publish
+    active = branch.active_release or release
+    if active.categories.filter(code="karahi").exists():
+        return active
+    new = clone_release(tenant, active, "Restaurant + pizza")
+    build_general_menu(new)
+    from apps.core.models import Branch as B
+    publish(new, list(B.objects.filter(tenant=tenant)), None)
+    branch.refresh_from_db()
+    return new

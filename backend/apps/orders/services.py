@@ -131,6 +131,11 @@ def serialize_line(ln):
 def floor_snapshot(branch):
     open_checks = {c.table_id: c for c in Check.objects.filter(branch=branch, status="open", table__isnull=False)
                    .select_related("opened_by")}
+    from django.db.models import Count
+    from apps.kitchen.models import TicketItem
+    ready = dict(TicketItem.objects.filter(ticket__check_ref__in=list(open_checks.values()), status="ready",
+                                           line__status="active").values_list("ticket__check_ref")
+                 .annotate(n=Count("id")).values_list("ticket__check_ref", "n"))
     tables = DiningTable.objects.filter(branch=branch, is_active=True).select_related("area").order_by("area__sort", "sort", "label")
     areas = {}
     for t in tables:
@@ -142,7 +147,7 @@ def floor_snapshot(branch):
             entry["check"] = {"id": str(c.pk), "token": c.token, "revision": c.revision, "guest_count": c.guest_count,
                               "waiter": c.opened_by.display_name, "opened_at": c.opened_at,
                               "total_minor": amounts["total_minor"], "balance_minor": amounts["balance_minor"],
-                              "bill_requested": c.bill_requested_at is not None}
+                              "bill_requested": c.bill_requested_at is not None, "ready_to_serve": ready.get(c.pk, 0)}
         a["tables"].append(entry)
     return {"areas": list(areas.values()), "server_time": timezone.now()}
 

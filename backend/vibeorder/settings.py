@@ -102,6 +102,8 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+MEDIA_URL = "/media/"
+MEDIA_ROOT = Path(os.environ.get("VIBEORDER_MEDIA_DIR", BASE_DIR / "media"))
 STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -125,10 +127,11 @@ CORS_ALLOW_HEADERS = [
 
 # Operational defaults (overridable per environment).
 QUOTE_TTL_SECONDS = int(os.environ.get("VIBEORDER_QUOTE_TTL", "300"))
-PAIRING_CODE_TTL_SECONDS = int(os.environ.get("VIBEORDER_PAIRING_TTL", "600"))
 STAFF_SESSION_TTL_HOURS = int(os.environ.get("VIBEORDER_SESSION_TTL_HOURS", "14"))
-PIN_MAX_ATTEMPTS = int(os.environ.get("VIBEORDER_PIN_MAX_ATTEMPTS", "5"))
-PIN_LOCKOUT_SECONDS = int(os.environ.get("VIBEORDER_PIN_LOCKOUT", "300"))
+# Branch this install runs (code or id). Staff who work at several branches sign in here without choosing.
+LOCAL_BRANCH = os.environ.get("VIBEORDER_BRANCH", "")
+LOGIN_MAX_ATTEMPTS = int(os.environ.get("VIBEORDER_LOGIN_MAX_ATTEMPTS", "5"))
+LOGIN_LOCKOUT_SECONDS = int(os.environ.get("VIBEORDER_LOGIN_LOCKOUT", "300"))
 PRINT_SPOOL_DIR = Path(os.environ.get("VIBEORDER_SPOOL_DIR", BASE_DIR / "var" / "spool"))
 PRINT_LEASE_SECONDS = int(os.environ.get("VIBEORDER_PRINT_LEASE", "30"))
 

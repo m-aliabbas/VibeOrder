@@ -21,7 +21,7 @@ class _ShiftScreenState extends State<ShiftScreen> {
   final amount = TextEditingController();
   final reason = TextEditingController();
   final approver = TextEditingController();
-  final approverPin = TextEditingController();
+  final approverPassword = TextEditingController();
 
   AppState get app => context.read<AppState>();
 
@@ -236,9 +236,9 @@ class _ShiftScreenState extends State<ShiftScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: TextField(
-                      controller: approverPin,
+                      controller: approverPassword,
                       obscureText: true,
-                      decoration: const InputDecoration(labelText: 'Manager PIN'),
+                      decoration: const InputDecoration(labelText: 'Manager password'),
                     ),
                   ),
                 ],
@@ -265,7 +265,7 @@ class _ShiftScreenState extends State<ShiftScreen> {
                     'expected_revision': s['revision'],
                     'reason': reason.text.trim(),
                     if (approver.text.isNotEmpty)
-                      'approval': {'username': approver.text.trim(), 'pin': approverPin.text},
+                      'approval': {'username': approver.text.trim(), 'password': approverPassword.text},
                   }, 'Shift closed'),
                   child: const Text('Close shift'),
                 ),

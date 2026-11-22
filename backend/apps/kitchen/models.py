@@ -55,7 +55,8 @@ class TicketItem(Stamped):
 
 
 class Printer(Stamped):
-    TRANSPORTS = [("spool_file", "Spooler fake (file)"), ("tcp", "Raw TCP / ESC-POS")]
+    TRANSPORTS = [("system", "Installed printer (USB / Windows)"), ("tcp", "Network printer (IP:9100)"),
+                  ("spool_file", "Test: write to file")]
 
     branch = models.ForeignKey(Branch, on_delete=models.PROTECT, related_name="printers")
     name = models.CharField(max_length=80)

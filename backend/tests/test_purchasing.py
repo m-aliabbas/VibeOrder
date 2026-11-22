@@ -88,7 +88,7 @@ def test_count_sheet_while_selling_posts_variance_at_count_time(demo, manager, w
                                          "quantity": 1}])
     assert on_hand(b, "potato") == 19800
     # A non-manager cannot approve without a manager PIN
-    clerk = staff_factory("hamza", "3333", "cashier")
+    clerk = staff_factory("hamza", "hamza123", "cashier")
     r = clerk.post(f"stock/count-sheets/{sc['id']}", {"action": "approve"})
     assert r.status_code == 403
     r = manager.post(f"stock/count-sheets/{sc['id']}", {"action": "approve", "expected_revision": sc["revision"]})

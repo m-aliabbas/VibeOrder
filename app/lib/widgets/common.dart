@@ -136,3 +136,53 @@ class NumPad extends StatelessWidget {
     );
   }
 }
+
+/// Category look when a dish has no photo yet: a warm gradient with an icon.
+IconData categoryIcon(String? code) => switch (code) {
+  'pizza' => Icons.local_pizza,
+  'deals' => Icons.local_offer,
+  'karahi' => Icons.soup_kitchen,
+  'bbq' => Icons.outdoor_grill,
+  'rice' => Icons.rice_bowl,
+  'bread' => Icons.bakery_dining,
+  'drinks' => Icons.local_drink,
+  'sides' => Icons.fastfood,
+  'extras' => Icons.eco,
+  _ => Icons.restaurant,
+};
+
+class DishImage extends StatelessWidget {
+  const DishImage({super.key, required this.url, this.category, this.radius = 0});
+  final String? url;
+  final String? category;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final fallback = Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [t.colorScheme.primary.withValues(alpha: 0.22), t.colorScheme.secondary.withValues(alpha: 0.18)],
+        ),
+      ),
+      alignment: Alignment.center,
+      child: Icon(categoryIcon(category), size: 40, color: t.colorScheme.primary.withValues(alpha: 0.7)),
+    );
+    final img = url == null
+        ? fallback
+        : Image.network(
+            url!,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => fallback,
+            frameBuilder: (_, child, frame, sync) => AnimatedOpacity(
+              opacity: sync || frame != null ? 1 : 0,
+              duration: const Duration(milliseconds: 250),
+              child: child,
+            ),
+          );
+    return ClipRRect(borderRadius: BorderRadius.circular(radius), child: img);
+  }
+}

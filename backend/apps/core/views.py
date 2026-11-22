@@ -8,93 +8,69 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from .auth import device_from_request
 from .errors import DomainError, Forbidden, NotFound
-from .models import Branch, Device, Membership, PairingCode, Staff, StaffSession, Station, new_token
+from .models import Branch, Device, Membership, Staff, StaffSession, Station, new_token
 from .scope import branch_for, require
 
 
-@api_view(["POST"])
-@authentication_classes([])
-@permission_classes([AllowAny])
-def pair_device(request):
-    """Exchange a short-lived single-use pairing code for a device token."""
-    code = str(request.data.get("code", "")).strip()
-    name = str(request.data.get("name", "Device"))[:80]
-    with transaction.atomic():
-        pc = (
-            PairingCode.objects.select_for_update()
-            .select_related("branch")
-            .filter(code=code, used_at__isnull=True, expires_at__gt=timezone.now())
-            .first()
-        )
-        if pc is None:
-            raise DomainError("Pairing code invalid or expired", code="invalid_pairing_code", http_status=400)
-        raw = new_token()
-        device = Device.objects.create(branch=pc.branch, name=name, kind=pc.kind, token_hash=Device.hash_token(raw))
-        pc.used_at = timezone.now()
-        pc.save(update_fields=["used_at"])
-    return Response(
-        {"device_id": str(device.pk), "device_token": raw, "branch_id": str(pc.branch.pk),
-         "branch_name": pc.branch.name, "kind": device.kind},
-        status=201,
-    )
+KINDS = ("tablet", "cashier", "kds", "office")
 
 
-@api_view(["GET"])
-@authentication_classes([])
-@permission_classes([AllowAny])
-def staff_directory(request, branch_id):
-    device = device_from_request(request)
-    if device is None or str(device.branch_id) != str(branch_id):
-        raise NotFound("Branch not found")
-    rows = (
-        Membership.objects.filter(branch=device.branch, is_active=True, staff__is_active=True)
-        .select_related("staff").order_by("staff__display_name")
-    )
-    staff = {}
-    for m in rows:
-        s = staff.setdefault(m.staff.pk, {"id": str(m.staff.pk), "username": m.staff.username,
-                                          "display_name": m.staff.display_name, "roles": []})
-        s["roles"].append(m.role)
-    return Response({"staff": list(staff.values()), "device": {"id": str(device.pk), "name": device.name, "kind": device.kind}})
+def _login_response(staff, branch, device, raw_session, expires_at, device_key):
+    roles = sorted(staff.memberships.filter(branch=branch, is_active=True).values_list("role", flat=True))
+    return {"session_token": raw_session, "expires_at": expires_at, "staff_id": str(staff.pk),
+            "display_name": staff.display_name, "username": staff.username, "roles": roles,
+            "branch_id": str(branch.pk), "branch_name": branch.name, "branch_code": branch.code,
+            "device_id": str(device.pk), "device_key": device_key}
 
 
 @api_view(["POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
-def login(request, branch_id):
-    device = device_from_request(request)
-    if device is None or str(device.branch_id) != str(branch_id):
-        raise NotFound("Branch not found")
-    username = str(request.data.get("username", ""))
-    pin = str(request.data.get("pin", ""))
+def login(request):
+    """Username + password sign in. No pairing: the device registers itself with a random key it keeps."""
+    from .auth import InvalidLogin, verify_password
+
+    d = request.data
+    try:
+        staff = verify_password(d.get("username", ""), d.get("password", ""))
+    except InvalidLogin:
+        return Response({"code": "invalid_credentials", "message": "Wrong username or password", "field_errors": {},
+                         "current_revision": None, "correlation_id": request.correlation_id}, status=401)
+    branches = list(Branch.objects.filter(memberships__staff=staff, memberships__is_active=True).distinct()
+                    .order_by("code"))
+    if not branches:
+        raise Forbidden("Your account has no branch yet. Ask a manager.", code="no_branch")
+    wanted = str(d.get("branch") or settings.LOCAL_BRANCH or "").strip()
+    branch = None
+    if wanted:
+        branch = next((b for b in branches if wanted in (str(b.pk), b.code)), None)
+    if branch is None:
+        if len(branches) == 1:
+            branch = branches[0]
+        else:
+            return Response({"code": "choose_branch", "message": "Choose a branch",
+                             "branches": [{"id": str(b.pk), "code": b.code, "name": b.name} for b in branches],
+                             "field_errors": {}, "correlation_id": request.correlation_id}, status=409)
+    kind = d.get("device_kind") if d.get("device_kind") in KINDS else "tablet"
+    name = str(d.get("device_name") or "Device").strip()[:80] or "Device"
+    raw_key = str(d.get("device_key") or "").strip()
+    now = timezone.now()
     with transaction.atomic():
-        staff = Staff.objects.select_for_update().filter(tenant=device.branch.tenant, username=username, is_active=True).first()
-        if staff is None or not staff.memberships.filter(branch=device.branch, is_active=True).exists():
-            raise DomainError("Unknown staff or PIN", code="invalid_credentials", http_status=401)
-        now = timezone.now()
-        if staff.locked_until and staff.locked_until > now:
-            raise DomainError("Too many attempts. Try again later.", code="locked", http_status=429)
-        if not staff.check_pin(pin):
-            staff.failed_attempts += 1
-            if staff.failed_attempts >= settings.PIN_MAX_ATTEMPTS:
-                staff.locked_until = now + timedelta(seconds=settings.PIN_LOCKOUT_SECONDS)
-                staff.failed_attempts = 0
-            staff.save(update_fields=["failed_attempts", "locked_until"])
-            # Returning (not raising) commits the attempt counter.
-            return Response({"code": "invalid_credentials", "message": "Unknown staff or PIN", "field_errors": {},
-                             "current_revision": None, "correlation_id": request.correlation_id}, status=401)
-        staff.failed_attempts = 0
-        staff.locked_until = None
-        staff.save(update_fields=["failed_attempts", "locked_until"])
+        device = Device.objects.filter(token_hash=Device.hash_token(raw_key)).first() if raw_key else None
+        if device is not None and device.revoked_at is not None:
+            raise Forbidden("This device was blocked by a manager.", code="device_blocked")
+        if device is None or device.branch_id != branch.pk:
+            raw_key = new_token()
+            device = Device.objects.create(branch=branch, name=name, kind=kind, token_hash=Device.hash_token(raw_key))
+        else:
+            Device.objects.filter(pk=device.pk).update(name=name, kind=kind, last_seen_at=now)
         raw = new_token()
         session = StaffSession.objects.create(
-            staff=staff, device=device, branch=device.branch, token_hash=Device.hash_token(raw),
+            staff=staff, device=device, branch=branch, token_hash=Device.hash_token(raw),
             expires_at=now + timedelta(hours=settings.STAFF_SESSION_TTL_HOURS),
         )
-    return Response({"session_token": raw, "expires_at": session.expires_at, "staff_id": str(staff.pk),
-                     "display_name": staff.display_name}, status=201)
+    return Response(_login_response(staff, branch, device, raw, session.expires_at, raw_key), status=201)
 
 
 @api_view(["POST"])
@@ -127,20 +103,6 @@ def bootstrap(request, branch_id):
         "active_shift": {"id": str(shift.pk), "status": shift.status, "drawer_code": shift.drawer_code,
                          "revision": shift.revision} if shift else None,
     })
-
-
-@api_view(["POST"])
-def create_pairing_code(request, branch_id):
-    branch = branch_for(request, branch_id)
-    require(request, "device.pair")
-    kind = request.data.get("kind", "tablet")
-    if kind not in ("tablet", "cashier", "kds"):
-        raise DomainError("Unknown device kind", field_errors={"kind": "invalid"})
-    pc = PairingCode.objects.create(
-        branch=branch, code=PairingCode.new_code(), kind=kind, created_by=request.user.staff,
-        expires_at=timezone.now() + timedelta(seconds=settings.PAIRING_CODE_TTL_SECONDS),
-    )
-    return Response({"code": pc.code, "expires_at": pc.expires_at, "kind": kind}, status=201)
 
 
 @api_view(["POST"])
@@ -177,3 +139,146 @@ def recovery(request, branch_id):
     branch = branch_for(request, branch_id)
     require(request, "recovery.view")
     return Response(reconciliation(branch))
+
+
+# ---------------------------------------------------------------- staff accounts (manager)
+
+MIN_PASSWORD = 6
+
+
+def _staff_row(staff, branch):
+    roles = sorted(m.role for m in staff.memberships.all() if m.branch_id == branch.pk and m.is_active)
+    last = staff.sessions.filter(branch=branch).order_by("-created_at").values_list("created_at", flat=True).first()
+    return {"id": str(staff.pk), "username": staff.username, "display_name": staff.display_name,
+            "roles": roles, "is_active": staff.is_active, "revision": staff_revision(staff),
+            "last_login_at": last, "locked": bool(staff.locked_until and staff.locked_until > timezone.now())}
+
+
+def staff_revision(staff):
+    return int(staff.updated_at.timestamp() * 1000) if getattr(staff, "updated_at", None) else 0
+
+
+def _clean_roles(request, roles):
+    from .models import Role
+    valid = {c for c, _ in Role.choices}
+    roles = sorted(set(roles or []))
+    bad = [r for r in roles if r not in valid]
+    if bad or not roles:
+        raise DomainError("Pick at least one valid role", field_errors={"roles": "invalid"})
+    if "owner" in roles and "owner" not in request.user.roles:
+        raise Forbidden("Only an owner can create another owner", code="permission_denied")
+    return roles
+
+
+def _check_password_rules(pw, field="password"):
+    if len(str(pw or "")) < MIN_PASSWORD:
+        raise DomainError(f"Password must be at least {MIN_PASSWORD} characters", field_errors={field: "too_short"})
+
+
+def _set_roles(staff, branch, roles):
+    current = {m.role: m for m in Membership.objects.select_for_update().filter(staff=staff, branch=branch)}
+    for role, m in current.items():
+        active = role in roles
+        if m.is_active != active:
+            m.is_active = active
+            m.save(update_fields=["is_active"])
+    for role in roles:
+        if role not in current:
+            Membership.objects.create(staff=staff, branch=branch, role=role)
+
+
+@api_view(["GET", "POST"])
+def staff_accounts(request, branch_id):
+    from .commands import run_command
+
+    branch = branch_for(request, branch_id)
+    require(request, "staff.manage")
+    if request.method == "GET":
+        rows = (Staff.objects.filter(memberships__branch=branch).exclude(password_hash="!").distinct()
+                .prefetch_related("memberships").order_by("display_name"))
+        from .models import Role
+        return Response({"staff": [_staff_row(s, branch) for s in rows],
+                         "roles": [{"code": c, "name": n} for c, n in Role.choices]})
+
+    def handler(ctx):
+        data = request.data
+        username = str(data.get("username", "")).strip().lower()
+        name = str(data.get("display_name", "")).strip()
+        if not username or not username.replace(".", "").replace("_", "").isalnum() or len(username) > 40:
+            raise DomainError("Username: letters, numbers, dot or underscore", field_errors={"username": "invalid"})
+        if not name:
+            raise DomainError("Enter the person's name", field_errors={"display_name": "required"})
+        _check_password_rules(data.get("password"))
+        roles = _clean_roles(request, data.get("roles"))
+        if Staff.objects.filter(tenant=branch.tenant, username__iexact=username).exists():
+            raise DomainError("That username is taken", code="username_taken", field_errors={"username": "taken"},
+                              http_status=409)
+        s = Staff(tenant=branch.tenant, username=username, display_name=name[:80])
+        s.set_password(str(data["password"]))
+        s.save()
+        _set_roles(s, branch, roles)
+        ctx.audit("staff.create", s, data={"username": username, "roles": roles})
+        return _staff_row(Staff.objects.prefetch_related("memberships").get(pk=s.pk), branch)
+
+    return run_command(request, branch_id, "staff.create", request.data, handler)
+
+
+@api_view(["POST"])
+def staff_account(request, branch_id, staff_id):
+    """Edit name / roles / active, or reset the password (the person then signs in with the new one)."""
+    from .commands import run_command
+
+    branch = branch_for(request, branch_id)
+    require(request, "staff.manage")
+
+    def handler(ctx):
+        data = request.data
+        s = Staff.objects.select_for_update().filter(pk=staff_id, tenant=branch.tenant).first()
+        if s is None or not s.memberships.filter(branch=branch).exists():
+            raise NotFound("Staff not found")
+        changed = []
+        if "display_name" in data:
+            name = str(data["display_name"]).strip()
+            if not name:
+                raise DomainError("Enter the person's name", field_errors={"display_name": "required"})
+            s.display_name = name[:80]
+            changed.append("display_name")
+        if "is_active" in data:
+            if s.pk == request.user.staff.pk and not data["is_active"]:
+                raise DomainError("You cannot switch off your own account", code="self_deactivate")
+            s.is_active = bool(data["is_active"])
+            changed.append("is_active")
+            if not s.is_active:
+                StaffSession.objects.filter(staff=s, revoked_at__isnull=True).update(revoked_at=timezone.now())
+        if data.get("password"):
+            _check_password_rules(data["password"])
+            s.set_password(str(data["password"]))
+            s.failed_attempts, s.locked_until = 0, None
+            changed.append("password")
+        if "roles" in data:
+            roles = _clean_roles(request, data["roles"])
+            if s.pk == request.user.staff.pk and not ({"manager", "owner"} & set(roles)):
+                raise DomainError("You cannot remove your own manager role", code="self_demote")
+            _set_roles(s, branch, roles)
+            changed.append("roles")
+        s.save()
+        ctx.audit("staff.update", s, data={"changed": changed})
+        return 200, _staff_row(Staff.objects.prefetch_related("memberships").get(pk=s.pk), branch)
+
+    return run_command(request, branch_id, "staff.update", request.data, handler)
+
+
+@api_view(["POST"])
+def change_my_password(request, branch_id):
+    branch_for(request, branch_id)
+    s = request.user.staff
+    if not s.check_password(str(request.data.get("current_password", ""))):
+        raise DomainError("Current password is wrong", code="invalid_credentials",
+                          field_errors={"current_password": "wrong"}, http_status=400)
+    _check_password_rules(request.data.get("new_password"), "new_password")
+    s.set_password(str(request.data["new_password"]))
+    s.save(update_fields=["password_hash"])
+    # Sign out the person's other devices; this one stays signed in.
+    StaffSession.objects.filter(staff=s, revoked_at__isnull=True).exclude(pk=request.auth.pk) \
+        .update(revoked_at=timezone.now())
+    return Response({"ok": True})

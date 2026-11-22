@@ -77,7 +77,7 @@ def test_a09_amend_half_after_cook_starts_then_remake(demo, waiter, cook, manage
     r = amend(waiter, chk["check_id"], {"action": "remake", "line_id": new_line["id"], "reason": "dropped"})
     assert r.status_code == 403 and r.json()["code"] == "approval_required"
     r = amend(waiter, chk["check_id"], {"action": "remake", "line_id": new_line["id"], "reason": "dropped",
-                                        "approval": {"username": "zara", "pin": "9999"}})
+                                        "approval": {"username": "zara", "password": "zara123"}})
     assert r.status_code == 200, r.content
     assert r.json()["total_minor"] == 180000  # payable unchanged by remake
     q = cook.get(f"stations/{st}/queue").json()
@@ -111,7 +111,7 @@ def test_remove_cooked_line_needs_manager_and_records_discard(demo, waiter, cook
     r = amend(waiter, chk["check_id"], {"action": "remove", "line_id": line["id"], "reason": "complaint"})
     assert r.json()["code"] == "approval_required"
     r = amend(waiter, chk["check_id"], {"action": "remove", "line_id": line["id"], "reason": "complaint",
-                                        "approval": {"username": "zara", "pin": "9999"}})
+                                        "approval": {"username": "zara", "password": "zara123"}})
     assert r.status_code == 200 and r.json()["total_minor"] == 0
     assert CheckAdjustment.objects.get(kind="remove").discarded
 
@@ -172,7 +172,7 @@ def test_a22_held_course_move_merge_then_split(demo, waiter, waiter2, cook, cash
                "source_expected_revision": db["revision"], "reason": "family joined"}
     r = waiter.post(f"checks/{a['check_id']}/merge", payload)
     assert r.status_code == 403 and r.json()["code"] == "approval_required"
-    r = waiter.post(f"checks/{a['check_id']}/merge", {**payload, "approval": {"username": "zara", "pin": "9999"}})
+    r = waiter.post(f"checks/{a['check_id']}/merge", {**payload, "approval": {"username": "zara", "password": "zara123"}})
     assert r.status_code == 200, r.content
     merged = check(waiter, a["check_id"])
     assert Check.objects.get(pk=b["check_id"]).status == "merged"

@@ -15,8 +15,11 @@ reset:            ## drop + recreate dev DB with fresh demo data
 	createdb vibeorder
 	$(MANAGE) migrate -v0 && $(MANAGE) seed_demo
 
-seed:             ## add fresh pairing codes (idempotent for the rest)
+seed:             ## (re)create demo data, idempotent; prints demo usernames + passwords
 	$(MANAGE) seed_demo
+
+history:          ## demo only: 30 days of past orders so the dashboard charts have data
+	$(MANAGE) seed_history
 
 server:           ## branch API + KDS on :8000
 	$(MANAGE) runserver 0.0.0.0:8000

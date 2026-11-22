@@ -13,7 +13,7 @@ def test_backup_is_encrypted_and_restore_drill_verifies(tmp_path, settings):
     settings.PRINT_SPOOL_DIR = tmp_path / "spool"
     settings.BACKUP_DIR = tmp_path / "backups"
     d = seed()
-    w = Staff(d["branch"], "bilal", "1111")
+    w = Staff(d["branch"], "bilal", "bilal123")
     chk = open_table(w, 6)
     add_round(w, chk["check_id"], [MIXED_PIZZA])
     rec = backup()

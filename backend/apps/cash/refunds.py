@@ -178,27 +178,12 @@ def resolve_refund(ctx, refund_id, data):
 
 
 def _print_slip(ctx, refund):
+    from apps.kitchen.layouts import render_refund
     from apps.kitchen.models import PrintJob
-    from apps.kitchen.services import money, printer_for, ticket_header
+    from apps.kitchen.services import printer_for
 
     printer = printer_for(ctx.branch, "receipt")
     if printer is None:
         return None
-    w = printer.width_chars
-    check = refund.check_ref
-    tz = ctx.branch.tz
-    lines = ["=" * w, ctx.branch.name.center(w), "REFUND".center(w),
-             (f"Original receipt {check.receipt_no}" if check.receipt_no else f"Check #{check.token}").center(w),
-             ticket_header(check), f"{timezone.localtime(timezone.now(), tz):%Y-%m-%d %H:%M}", "-" * w]
-
-    def row(k, v):
-        lines.append(k + v.rjust(w - len(k)))
-
-    row(f"Refund {refund.get_method_display()}", money(refund.amount_minor, refund.currency))
-    if refund.external_ref:
-        row("Terminal ref", refund.external_ref)
-    row("Reason", refund.reason[: w - 8])
-    row("Approved by", refund.approved_by.display_name)
-    lines += ["=" * w, "", ""]
-    return PrintJob.objects.create(branch=ctx.branch, printer=printer, kind="refund", check_ref=check,
-                                   content="\n".join(lines))
+    return PrintJob.objects.create(branch=ctx.branch, printer=printer, kind="refund", check_ref=refund.check_ref,
+                                   content=render_refund(refund, printer.width_chars))

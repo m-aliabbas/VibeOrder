@@ -6,11 +6,14 @@ import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import 'alerts_screen.dart';
 import 'cashier_screen.dart';
+import 'dashboard_screen.dart';
+import 'ledgers_screen.dart';
 import '../widgets/print_log.dart';
 import 'devices_screen.dart';
 import 'dispatch_screen.dart';
 import 'floor_screen.dart';
 import 'shift_screen.dart';
+import 'staff_screen.dart';
 import 'stock_screen.dart';
 
 /// Role-specific landing: waiters get the floor, cashiers get counter + shift.
@@ -65,6 +68,8 @@ class _HomeScreenState extends State<HomeScreen> {
       pendingDest = 'Stock';
     });
     final dests = <(Object, String, Widget)>[
+      if (app.can('reports.view')) (Icons.insights_outlined, 'Dashboard', const DashboardScreen()),
+      if (app.can('reports.view')) (Icons.menu_book_outlined, 'Ledgers', const LedgersScreen()),
       if (app.can('floor.view')) (Icons.table_restaurant, 'Floor', const FloorScreen()),
       if (app.isCashier) (Icons.point_of_sale, 'Counter', const CashierScreen()),
       if (app.can('pack.verify') || app.can('delivery.manage'))
@@ -76,6 +81,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (app.can('stock.view'))
         (Icons.inventory_outlined, 'Stock', StockScreen(key: ValueKey('stock-$stockTab'), initialTab: stockTab)),
       if (app.can('print.reprint')) (Icons.receipt_long_outlined, 'KOT & receipts', const PrintLogScreen()),
+      if (app.isManager) (Icons.badge_outlined, 'Staff', const StaffScreen()),
       (Icons.print_outlined, 'Devices', const DevicesScreen()),
     ];
     // Role landing: cashiers start at the counter, everyone else at their first screen.
@@ -83,24 +89,14 @@ class _HomeScreenState extends State<HomeScreen> {
       index = dests.indexWhere((d) => d.$2 == pendingDest);
       pendingDest = null;
     }
-    index ??= app.isCashier ? dests.indexWhere((d) => d.$2 == 'Counter') : 0;
+    index ??= app.isManager
+        ? dests.indexWhere((d) => d.$2 == 'Dashboard')
+        : (app.isCashier ? dests.indexWhere((d) => d.$2 == 'Counter') : 0);
     if (index! < 0 || index! >= dests.length) index = 0;
     final index_ = index!;
     final wide = MediaQuery.sizeOf(context).width >= 700;
     final body = dests[index_].$3;
-    final header = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(app.staffName, style: const TextStyle(fontWeight: FontWeight.w600)),
-        const SizedBox(width: 4),
-        IconButton(
-          key: const ValueKey('lock'),
-          tooltip: 'Lock / switch user',
-          icon: const Icon(Icons.lock_outline),
-          onPressed: () => app.lock(),
-        ),
-      ],
-    );
+    final header = _AccountMenu(app: app, compact: false);
     if (wide) {
       return Scaffold(
         body: Row(
@@ -118,26 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   alignment: Alignment.bottomCenter,
                   child: Padding(
                     padding: const EdgeInsets.only(bottom: 16),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          key: const ValueKey('lock'),
-                          tooltip: 'Lock / switch user',
-                          onPressed: () => app.lock(),
-                          icon: const Icon(Icons.lock_outline),
-                        ),
-                        SizedBox(
-                          width: 80,
-                          child: Text(
-                            app.staffName,
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.labelSmall,
-                            maxLines: 2,
-                          ),
-                        ),
-                      ],
-                    ),
+                    child: _AccountMenu(app: app, compact: true),
                   ),
                 ),
               ),
@@ -158,6 +135,81 @@ class _HomeScreenState extends State<HomeScreen> {
               selectedIndex: index_,
               onDestinationSelected: (i) => setState(() => index = i),
               destinations: [for (final d in dests) NavigationDestination(icon: _icon(d.$1), label: d.$2)],
+            ),
+    );
+  }
+}
+
+/// Who is signed in, with change password and sign out. Shared tablets: sign out, next person signs in.
+class _AccountMenu extends StatelessWidget {
+  const _AccountMenu({required this.app, required this.compact});
+  final AppState app;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final initial = app.staffName.isEmpty ? '?' : app.staffName[0].toUpperCase();
+    final avatar = CircleAvatar(
+      radius: 18,
+      backgroundColor: t.colorScheme.primary,
+      child: Text(
+        initial,
+        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+      ),
+    );
+    return PopupMenuButton<String>(
+      key: const ValueKey('account'),
+      tooltip: 'Account',
+      position: PopupMenuPosition.under,
+      onSelected: (v) {
+        if (v == 'password') showChangePassword(context);
+        if (v == 'logout') app.logout();
+      },
+      itemBuilder: (_) => [
+        PopupMenuItem(
+          enabled: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(app.staffName, style: t.textTheme.titleSmall),
+              Text('@${app.username} · ${app.branchName}', style: t.textTheme.bodySmall),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: 'password',
+          child: ListTile(leading: Icon(Icons.key_outlined), title: Text('Change my password')),
+        ),
+        const PopupMenuItem(
+          key: ValueKey('logout'),
+          value: 'logout',
+          child: ListTile(leading: Icon(Icons.logout), title: Text('Sign out')),
+        ),
+      ],
+      child: compact
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                avatar,
+                const SizedBox(height: 4),
+                SizedBox(
+                  width: 80,
+                  child: Text(app.staffName, textAlign: TextAlign.center, style: t.textTheme.labelSmall, maxLines: 2),
+                ),
+              ],
+            )
+          : Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(app.staffName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(width: 8),
+                  avatar,
+                ],
+              ),
             ),
     );
   }

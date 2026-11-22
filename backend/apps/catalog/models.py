@@ -43,6 +43,7 @@ class Product(Stamped):
     kind = models.CharField(max_length=20, choices=KINDS, default="item")
     station_code = models.CharField(max_length=30, default="packing")
     description = models.CharField(max_length=300, blank=True)
+    image = models.CharField(max_length=200, blank=True, help_text="File under MEDIA_ROOT/menu/, e.g. naan.png")
     sort = models.PositiveIntegerField(default=0)
     option_groups = models.ManyToManyField("OptionGroup", blank=True, related_name="products")
 

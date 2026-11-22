@@ -5,7 +5,7 @@
 Requires PostgreSQL 17 (`brew services start postgresql@17`), Python 3.13 with `uv`, Flutter 3.44.
 
 ```bash
-make setup     # venv, deps, databases, migrations, demo data (prints PINs + pairing codes)
+make setup     # venv, deps, databases, migrations, demo data (prints the demo usernames + passwords)
 make server    # branch API + kitchen display at http://localhost:8000/kds/
 make worker    # print worker; tickets land in backend/var/spool/
 make sync      # branch<->cloud sync (owner figures + storefront orders reach the branch)
@@ -15,15 +15,16 @@ make smoke     # live end-to-end run against the server
 make drill     # encrypted backup + verified restore into a scratch DB
 ```
 
-Guest storefront: http://localhost:8000/s/demo/ · Owner portal: http://localhost:8000/owner/ (ayesha / 8888)
+Guest storefront: http://localhost:8000/s/demo/ · Owner portal: http://localhost:8000/owner/ (ayesha / ayesha123)
 
-Demo staff PINs: bilal 1111, sana 2222 (waiters) · hamza 3333 (cashier) · usman 4444 (cook) · zara 9999 (manager) ·
-faisal 6666 (packer) · imran 5555, kashif 5557 (riders) · ayesha 8888 (owner) · nadia 7777 (branch B2 manager).
+Demo sign in (username / password): bilal / bilal123, sana / sana123 (waiters) · hamza / hamza123 (cashier) ·
+usman / usman123 (cook) · zara / zara123 (manager) · faisal / faisal123 (packer) · imran / imran123 (rider) ·
+ayesha / ayesha123 (owner, B1 + B2). Managers add people and reset passwords in the app → Staff. Full list: [DEMO_LOGINS.md](DEMO_LOGINS.md).
 
 | Path | Contents |
 |---|---|
 | `backend/` | Django + DRF: core, catalog/pricing + menu authoring, orders/corrections/discounts, kitchen/printing, cash/refunds, fulfillment (packing, delivery, riders), stock, ops (backup, fencing), cloud (sync, storefront, owner, payments), reports; templates for KDS, storefront, tracking, owner portal |
-| `app/` | Flutter staff app: pairing, PIN login, floor, order + pizza/deal builders, corrections, cashier (discounts, split by item, refunds, phone/delivery orders), dispatch, drawer + rider cash, stock, devices |
+| `app/` | Flutter staff app: username + password sign in, manager dashboard with charts, staff accounts, floor, order + pizza/deal builders, corrections, cashier (discounts, split by item, refunds, phone/delivery orders), dispatch, drawer + rider cash, stock, devices |
 | `Todo.md` | Backlog and acceptance-case status per milestone |
 | `.claude/skills/dev`, `.claude/skills/test` | How to develop and verify in this repo |
 
